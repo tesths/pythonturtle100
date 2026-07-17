@@ -1,0 +1,60 @@
+{
+  "categories": [
+    {
+      "name": "海龟绘图 100 题",
+      "slug": "turtle100",
+      "url": "/category/turtle100/",
+      "count": 113
+    },
+    {
+      "name": "常用工具",
+      "slug": "common-tools",
+      "url": "/category/common-tools/",
+      "count": 4
+    },
+    {
+      "name": "海龟绘图详解",
+      "slug": "turtle-detailed",
+      "url": "/category/turtle-detailed/",
+      "count": 4
+    },
+    {
+      "name": "常用方法索引",
+      "slug": "widely-used-functions",
+      "url": "/category/widely-used-functions/",
+      "count": 1
+    }
+  ],
+  "tags": [
+    {
+      "name": "少儿编程",
+      "slug": "%e5%b0%91%e5%84%bf%e7%bc%96%e7%a8%8b",
+      "url": "/tag/%e5%b0%91%e5%84%bf%e7%bc%96%e7%a8%8b/",
+      "count": 121
+    },
+    {
+      "name": "turtle graphics 100 exercises",
+      "slug": "turtle-graphics-100-exercises",
+      "url": "/tag/turtle-graphics-100-exercises/",
+      "count": 116
+    },
+    {
+      "name": "海龟绘图 100 题",
+      "slug": "turtle100",
+      "url": "/tag/turtle100/",
+      "count": 116
+    },
+    {
+      "name": "工具",
+      "slug": "%e5%b7%a5%e5%85%b7",
+      "url": "/tag/%e5%b7%a5%e5%85%b7/",
+      "count": 3
+    },
+    {
+      "name": "软件",
+      "slug": "%e8%bd%af%e4%bb%b6",
+      "url": "/tag/%e8%bd%af%e4%bb%b6/",
+      "count": 3
+    }
+  ]
+}

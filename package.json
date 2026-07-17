@@ -1,0 +1,33 @@
+{
+  "name": "pythonturtle-restored-nuxt",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:data": "node scripts/build-content.mjs",
+    "dev": "node scripts/dev.mjs",
+    "generate": "npm run build:data && nuxt generate",
+    "preview": "nuxt preview",
+    "build": "npm run generate",
+    "typecheck": "nuxt typecheck",
+    "verify": "node scripts/verify-build.mjs",
+    "check": "npm run build:data && npm run typecheck && npm run generate && npm run verify"
+  },
+  "dependencies": {
+    "@nuxt/ui": "4.10.0",
+    "marked": "^18.0.6",
+    "nuxt": "4.4.8",
+    "tailwindcss": "^4.3.3",
+    "vue": "^3.5.26",
+    "vue-router": "^5.1.0",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@iconify-json/lucide": "^1.2.117",
+    "@types/node": "^22.20.1",
+    "typescript": "^6.0.3",
+    "vue-tsc": "^3.3.7"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  }
+}
