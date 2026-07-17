@@ -3,7 +3,12 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
-const OUTPUT = join(ROOT, '.output', 'public')
+const LOCAL_OUTPUT = join(ROOT, '.output', 'public')
+const CLOUDFLARE_OUTPUT = join(ROOT, 'dist')
+const outputCandidates = process.env.CF_PAGES
+  ? [CLOUDFLARE_OUTPUT, LOCAL_OUTPUT]
+  : [LOCAL_OUTPUT, CLOUDFLARE_OUTPUT]
+const OUTPUT = outputCandidates.find(existsSync) || outputCandidates[0]
 const SITE_FILE = join(ROOT, 'content-data', 'site.json')
 const ROUTES_FILE = join(ROOT, 'content-data', 'routes.json')
 

@@ -533,10 +533,16 @@ npm run check
 | `npm run generate` | 生成可部署的静态网站。 |
 | `npm run verify` | 检查全部路由、站内资源、sitemap、RSS、404 和部署目录。 |
 
-静态输出位于：
+本地静态输出通常位于：
 
 ```text
 .output/public/
+```
+
+Cloudflare Pages 构建环境会自动切换 Nitro Pages 预设，输出目录为：
+
+```text
+dist/
 ```
 
 需要本地检查生产产物时，可运行：
@@ -545,7 +551,7 @@ npm run check
 npm run preview
 ```
 
-或按照 `nuxt generate` 输出的提示，用静态文件服务器打开 `.output/public`。
+或按照 `nuxt generate` 输出的提示预览实际生成目录；本地通常是 `.output/public`，Cloudflare Pages 是 `dist`。
 
 ### 发布前文章检查清单
 

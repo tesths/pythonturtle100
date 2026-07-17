@@ -71,7 +71,7 @@ restored-nuxt/scripts/build-content.mjs
 Nuxt 4 + Nuxt UI
         │
         ▼
-.output/public/                   最终静态站点
+.output/public/ 或 dist/          最终静态站点（取决于 Nitro 预设）
 ```
 
 ### 本次已完成
@@ -129,8 +129,8 @@ Nuxt 4 + Nuxt UI
 | `public/sitemap.xml` | 构建生成的站点地图。 |
 | `public/rss.xml` | 构建生成的 RSS。 |
 | `public/robots.txt` | 构建生成的爬虫规则与 sitemap 地址。 |
-| `.output/public/` | `npm run generate` 的可部署静态产物。 |
-| `dist` | Nuxt 生成的兼容性符号链接；部署时仍应直接使用 `.output/public/`。 |
+| `.output/public/` | 本地静态预设生成的部署产物。 |
+| `dist/` | Cloudflare Pages 环境自动选择 Pages 预设后生成的部署产物；Cloudflare 的 Build output directory 应填写 `dist`。 |
 
 ### Nuxt 4 活动源码
 
@@ -469,13 +469,14 @@ npm run check
 npm run preview
 ```
 
-最终部署目录：
+最终部署目录取决于环境：
 
 ```text
-.output/public/
+本地静态构建：      .output/public/
+Cloudflare Pages：  dist/
 ```
 
-静态托管平台应把该目录作为发布产物。项目已经自包含，不需要访问相邻的 `restored-site/`。
+静态托管平台应把对应目录作为发布产物；Cloudflare Pages 的 Build output directory 填写 `dist`。项目已经自包含，不需要访问相邻的 `restored-site/`。
 
 ---
 
@@ -525,7 +526,7 @@ npm run preview
 
 发布前：
 
-- [ ] 确认 `.output/public/` 是本次构建的新产物。
+- [ ] 本地确认 `.output/public/`，Cloudflare Pages 确认 `dist/` 是本次构建的新产物。
 - [ ] 确认全部 203 条内容路由在静态产物中存在。
 - [ ] 运行 `npm run check` 并确认部署产物校验通过。
 - [ ] 确认 Cloudflare Pages 的 `SITE_URL` 已设置为当前生产域名；尚无自定义域名时确认 Pages 子域名正确。

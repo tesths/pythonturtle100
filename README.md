@@ -17,10 +17,16 @@ npm run dev
 npm run check
 ```
 
-该命令会依次执行内容数据生成、类型检查、静态生成和部署产物验证。最终部署目录为：
+该命令会依次执行内容数据生成、类型检查、静态生成和部署产物验证。本地静态预设通常输出：
 
 ```text
 .output/public/
+```
+
+Cloudflare Pages 构建环境会让 Nuxt 自动使用 Pages 预设，并输出：
+
+```text
+dist/
 ```
 
 ## Git 提交范围
@@ -50,7 +56,7 @@ npm run check
 
 ```text
 Build command: npm run generate
-Build output directory: .output/public
+Build output directory: dist
 Node.js version: 24.18.0
 ```
 
