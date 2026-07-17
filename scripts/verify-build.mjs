@@ -91,21 +91,31 @@ if (site && routes) {
 
   const sitemapPath = join(OUTPUT, 'sitemap.xml')
   const rssPath = join(OUTPUT, 'rss.xml')
+  const robotsPath = join(OUTPUT, 'robots.txt')
   check(existsSync(sitemapPath), 'Missing sitemap.xml in deploy output')
   check(existsSync(rssPath), 'Missing rss.xml in deploy output')
-  check(existsSync(join(OUTPUT, 'robots.txt')), 'Missing robots.txt in deploy output')
+  check(existsSync(robotsPath), 'Missing robots.txt in deploy output')
   check(existsSync(join(OUTPUT, '404.html')), 'Missing 404.html in deploy output')
 
   if (existsSync(sitemapPath)) {
     const sitemap = readFileSync(sitemapPath, 'utf8')
     const urlCount = (sitemap.match(/<url>/g) || []).length
+    const sitemapUrls = [...sitemap.matchAll(/<loc>(.*?)<\/loc>/g)].map((match) => match[1])
     check(urlCount === routes.length, `Sitemap URL count ${urlCount} does not match route count ${routes.length}`)
+    check(sitemapUrls.length === routes.length, `Sitemap loc count ${sitemapUrls.length} does not match route count ${routes.length}`)
+    check(sitemapUrls.every((url) => url === site.url || url.startsWith(`${site.url}/`)), `Sitemap contains URLs outside ${site.url}`)
+  }
+
+  if (existsSync(robotsPath)) {
+    const robots = readFileSync(robotsPath, 'utf8')
+    check(robots.includes(`Sitemap: ${site.url}/sitemap.xml`), 'robots.txt sitemap URL does not match site.url')
   }
 
   if (existsSync(rssPath)) {
     const rss = readFileSync(rssPath, 'utf8')
     const itemCount = (rss.match(/<item>/g) || []).length
     check(itemCount > 0 && itemCount <= 20, `Unexpected RSS item count: ${itemCount}`)
+    check(rss.includes(`<link>${site.url}/</link>`), 'RSS site URL does not match site.url')
   }
 
   const siteDataBytes = statSync(SITE_FILE).size
@@ -114,6 +124,7 @@ if (site && routes) {
     categories: site.categories.length,
     tags: site.tags.length,
     routes: routes.length,
+    siteUrl: site.url,
     siteDataBytes,
     output: OUTPUT,
     warnings

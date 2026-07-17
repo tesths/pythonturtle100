@@ -43,7 +43,8 @@ scripts/build-content.mjs
         ├── 生成 content-data/site.json
         ├── 生成 content-data/routes.json
         ├── 生成 public/sitemap.xml
-        └── 生成 public/rss.xml
+        ├── 生成 public/rss.xml
+        └── 生成 public/robots.txt
         │
         ▼
 Nuxt 页面读取生成后的 JSON 并进行静态预渲染
@@ -561,7 +562,7 @@ npm run preview
 - [ ] 没有本机路径、账号、密钥或个人信息。
 - [ ] 桌面端和移动端均已检查。
 - [ ] `npm run check` 成功，且部署产物校验通过。
-- [ ] `sitemap.xml` 和 `rss.xml` 已随构建更新。
+- [ ] `sitemap.xml`、`rss.xml` 和 `robots.txt` 已随构建更新。
 
 ---
 
@@ -632,4 +633,4 @@ content-data/routes.json
 4. **一篇文章解决一个核心问题。** 过大的主题拆成系列，并通过站内链接串联。
 5. **先确保代码正确，再优化表达。** 教程中可运行的结果比篇幅更重要。
 6. **工具类内容标注核验日期。** 下载链接、安装步骤和软件版本需要定期复查。
-7. **不要直接编辑生成文件。** `content-data/*.json`、`public/sitemap.xml` 和 `public/rss.xml` 会在下次构建时被覆盖。
+7. **不要直接编辑生成文件。** `content-data/*.json`、`public/sitemap.xml`、`public/rss.xml` 和 `public/robots.txt` 会在下次构建时被覆盖。

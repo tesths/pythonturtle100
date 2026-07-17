@@ -7,7 +7,7 @@
 
 ## 1. 交付结论
 
-`pythonturtle.cc` 的已恢复文章已经接入 Nuxt 4 + Nuxt UI 站点。当前版本可从 Markdown 生成完整的文章、分类、标签、归档、分页、搜索、站点地图和 RSS，并输出可直接部署的静态文件。
+旧域名 `pythonturtle.cc` 的已恢复文章已经接入 Nuxt 4 + Nuxt UI 站点。当前版本可从 Markdown 生成完整的文章、分类、标签、归档、分页、搜索、站点地图和 RSS，并输出可直接部署的静态文件。
 
 本次最终验证结果：
 
@@ -64,7 +64,8 @@ restored-nuxt/scripts/build-content.mjs
         ├── 建立目录、摘要、分类、标签、归档和分页
         ├── 生成 Nuxt 使用的 JSON
         ├── 生成 sitemap.xml
-        └── 生成 rss.xml
+        ├── 生成 rss.xml
+        └── 生成 robots.txt
         │
         ▼
 Nuxt 4 + Nuxt UI
@@ -127,6 +128,7 @@ Nuxt 4 + Nuxt UI
 | `public/wp-content/uploads/` | 旧文章图片和静态附件。 |
 | `public/sitemap.xml` | 构建生成的站点地图。 |
 | `public/rss.xml` | 构建生成的 RSS。 |
+| `public/robots.txt` | 构建生成的爬虫规则与 sitemap 地址。 |
 | `.output/public/` | `npm run generate` 的可部署静态产物。 |
 | `dist` | Nuxt 生成的兼容性符号链接；部署时仍应直接使用 `.output/public/`。 |
 
@@ -224,6 +226,7 @@ content-data/site.json
 content-data/routes.json
 public/sitemap.xml
 public/rss.xml
+public/robots.txt
 ```
 
 `site.json` 是前端的主要数据源，包含：
@@ -396,7 +399,7 @@ app/assets/css/main.css
 - `public/robots.txt`。
 - 默认社交分享图 `public/og-default.png`。
 
-站点域名、标题、描述和顶部菜单集中在 `site.config.mjs`。如果更换域名，只修改该配置并重新生成 sitemap、RSS 和静态页面。
+站点标题、描述和顶部菜单集中在 `site.config.mjs`。站点地址优先读取 `SITE_URL`，未设置时使用默认 Pages 子域名；购买新域名后只需在 Cloudflare Pages 设置 `SITE_URL` 并重新部署，不需要修改源码。sitemap、RSS、robots.txt、canonical、Open Graph 和 JSON-LD 会使用同一地址。
 
 ---
 
@@ -515,7 +518,7 @@ npm run preview
 - [ ] 检查是否存在重复 URL，确认构建未报冲突。
 - [ ] 检查分类、标签和分页路由。
 - [ ] 检查 `content-data/routes.json`。
-- [ ] 检查 `public/sitemap.xml` 与 `public/rss.xml`。
+- [ ] 检查 `public/sitemap.xml`、`public/rss.xml` 与 `public/robots.txt`。
 - [ ] 运行 `npm run typecheck`。
 - [ ] 运行 `npm run generate`。
 - [ ] 抽查桌面端、移动端、搜索、目录、代码复制和 404。
@@ -525,7 +528,7 @@ npm run preview
 - [ ] 确认 `.output/public/` 是本次构建的新产物。
 - [ ] 确认全部 203 条内容路由在静态产物中存在。
 - [ ] 运行 `npm run check` 并确认部署产物校验通过。
-- [ ] 确认生产域名仍为 `https://pythonturtle.cc`。
+- [ ] 确认 Cloudflare Pages 的 `SITE_URL` 已设置为当前生产域名；尚无自定义域名时确认 Pages 子域名正确。
 
 ---
 

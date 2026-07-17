@@ -194,6 +194,14 @@ function buildRssXml(posts) {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0">\n<channel>\n  <title>${xmlEscape(siteConfig.title)}</title>\n  <link>${xmlEscape(`${siteConfig.url}/`)}</link>\n  <description>${xmlEscape(siteConfig.description)}</description>\n  <language>zh-CN</language>\n  <lastBuildDate>${xmlEscape(toRfc2822(posts[0]?.date || posts[0]?.lastmod))}</lastBuildDate>\n${items}\n</channel>\n</rss>\n`
 }
 
+function buildRobotsTxt() {
+  return `User-agent: *
+Allow: /
+
+Sitemap: ${siteConfig.url}/sitemap.xml
+`
+}
+
 function slugFromUrl(url) {
   return normalizePath(url).replace(/^\/|\/$/g, '')
 }
@@ -412,6 +420,7 @@ for (const entry of sitemapEntries) {
 }
 const sitemapXml = buildSitemapXml(sitemapEntries)
 const rssXml = buildRssXml(posts.slice(0, 20))
+const robotsTxt = buildRobotsTxt()
 
 const site = {
   ...siteConfig,
@@ -426,6 +435,7 @@ writeFileSync(join(OUT_DIR, 'site.json'), `${JSON.stringify(site, null, 2)}\n`)
 writeFileSync(join(OUT_DIR, 'routes.json'), `${JSON.stringify(routes, null, 2)}\n`)
 writeFileSync(join(ROOT, 'public', 'sitemap.xml'), sitemapXml)
 writeFileSync(join(ROOT, 'public', 'rss.xml'), rssXml)
+writeFileSync(join(ROOT, 'public', 'robots.txt'), robotsTxt)
 
 console.log(JSON.stringify({
   posts: posts.length,
@@ -434,5 +444,7 @@ console.log(JSON.stringify({
   routes: routes.length,
   out: join(OUT_DIR, 'site.json'),
   sitemap: join(ROOT, 'public', 'sitemap.xml'),
-  rss: join(ROOT, 'public', 'rss.xml')
+  rss: join(ROOT, 'public', 'rss.xml'),
+  robots: join(ROOT, 'public', 'robots.txt'),
+  siteUrl: siteConfig.url
 }, null, 2))

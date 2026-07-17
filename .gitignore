@@ -15,6 +15,7 @@ dist
 content-data/
 public/sitemap.xml
 public/rss.xml
+public/robots.txt
 
 # Local deployment and test artifacts
 .wrangler/
