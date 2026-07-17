@@ -3,7 +3,9 @@
 > 项目目录：`restored-nuxt`  
 > 交接日期：2026-07-17  
 > 当前状态：迁移完成，静态构建与内容路由验证通过  
-> 后续文章写作与发布：参见 [`ADDING_ARTICLES.md`](./ADDING_ARTICLES.md)
+> 后续文章写作：参见 [`ADDING_ARTICLES.md`](./ADDING_ARTICLES.md)
+>
+> Cloudflare Pages 部署：参见 [`DEPLOYMENT.md`](./DEPLOYMENT.md)
 
 ## 1. 交付结论
 

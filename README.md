@@ -52,6 +52,8 @@ dist/
 
 ## Cloudflare Pages
 
+完整操作和故障排查见 [`DEPLOYMENT.md`](./DEPLOYMENT.md)。
+
 建议使用 Git 集成，构建配置为：
 
 ```text
