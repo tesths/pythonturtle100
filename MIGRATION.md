@@ -1,8 +1,8 @@
 # WordPress 内容站迁移至 Nuxt 4：开发交接
 
-> 项目目录：`restored-nuxt`  
-> 交接日期：2026-07-17  
-> 当前状态：迁移完成，静态构建与内容路由验证通过  
+> 项目目录：`pythonturtle100`，当前仓库根目录
+> 交接日期：2026-07-17
+> 当前状态：迁移完成，静态构建与内容路由验证通过
 > 后续文章写作：参见 [`ADDING_ARTICLES.md`](./ADDING_ARTICLES.md)
 >
 > Cloudflare Pages 部署：参见 [`DEPLOYMENT.md`](./DEPLOYMENT.md)
@@ -52,13 +52,13 @@ restored-site/                    Hugo 恢复项目，仅保留为历史恢复�
         └── 已完成一次性内容迁入
         │
         ▼
-restored-nuxt/
+pythonturtle100/
         ├── content/posts/        122 篇恢复文章与后续新文章
         ├── content/taxonomy_terms.json
         └── public/wp-content/uploads/
         │
         ▼
-restored-nuxt/scripts/build-content.mjs
+pythonturtle100/scripts/build-content.mjs
         │
         ├── 读取项目内文章与术语数据
         ├── 解析 TOML / YAML front matter
@@ -103,16 +103,9 @@ Nuxt 4 + Nuxt UI
 
 ## 3. 目录职责
 
-从工作区根目录看，几个主要目录的职责如下：
+当前仓库根目录就是活动站点。`pythonturtle.cc/`、`restored-site/` 和 `restored-large-assets/` 是迁移阶段的历史来源目录，不是本仓库的构建入口，也不是 `npm run check` 的依赖。
 
-| 路径 | 职责 |
-| --- | --- |
-| `pythonturtle.cc/` | 原 WordPress 文件和 uploads 来源，不是当前构建入口。 |
-| `restored-site/` | WordPress WXR 恢复后的 Hugo 历史项目；当前 Nuxt 构建不再依赖它。 |
-| `restored-large-assets/` | 超过原静态托管单文件限制的大文件备份。 |
-| `restored-nuxt/` | 当前活动站点和最终交付项目。 |
-
-`restored-nuxt/` 内部：
+仓库内部主要目录职责如下：
 
 | 路径 | 职责 |
 | --- | --- |
@@ -170,6 +163,7 @@ app/pages/
 npm ci
 npm run dev
 npm run build:data
+npm run test
 npm run typecheck
 npm run generate
 npm run preview
@@ -179,6 +173,7 @@ npm run preview
 | --- | --- |
 | `npm run dev` | 先生成内容数据，再启动 Nuxt；同时监听本地 `content/posts/`。 |
 | `npm run build:data` | 只重建 JSON、路由、站点地图和 RSS。 |
+| `npm run test` | 使用 Node 测试检查生成后的内容数据、路由和分类标签索引一致性。 |
 | `npm run typecheck` | 运行 Nuxt/Vue/TypeScript 类型检查。 |
 | `npm run generate` | 先重建内容数据，再执行 Nuxt 静态生成。 |
 | `npm run build` | 当前与 `npm run generate` 等价。 |
@@ -432,7 +427,6 @@ Nuxt 项目的 `public/wp-content/uploads/` 中现有 606 个恢复文件。文�
 ### 首次安装
 
 ```bash
-cd restored-nuxt
 npm ci
 ```
 
@@ -463,7 +457,7 @@ npm run build:data
 npm run check
 ```
 
-该命令依次执行内容构建、类型检查、静态生成和部署产物校验。
+该命令依次执行内容构建、内容数据测试、类型检查、静态生成和部署产物校验。
 
 建议再检查：
 
@@ -510,7 +504,7 @@ Cloudflare Pages：  dist/
 
 开始修改前：
 
-- [ ] 确认自己位于 `restored-nuxt/`。
+- [ ] 确认自己位于当前仓库根目录。
 - [ ] 确认页面代码位于 `app/`，文章位于 `content/posts/`。
 - [ ] 运行 `npm ci` 或确认依赖已安装。
 - [ ] 运行 `npm run build:data`，核对文章、分类、标签和路由数量。
@@ -522,6 +516,7 @@ Cloudflare Pages：  dist/
 - [ ] 检查分类、标签和分页路由。
 - [ ] 检查 `content-data/routes.json`。
 - [ ] 检查 `public/sitemap.xml`、`public/rss.xml` 与 `public/robots.txt`。
+- [ ] 运行 `npm run test`。
 - [ ] 运行 `npm run typecheck`。
 - [ ] 运行 `npm run generate`。
 - [ ] 抽查桌面端、移动端、搜索、目录、代码复制和 404。

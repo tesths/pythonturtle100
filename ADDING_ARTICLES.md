@@ -1,8 +1,8 @@
 # 后续文章撰写与发布指南
 
-> 适用项目：`restored-nuxt`  
-> 最后更新：2026-07-17  
-> 目标读者：后续文章作者、内容维护者和接手开发的工程师  
+> 适用项目：`pythonturtle100`
+> 最后更新：2026-07-29
+> 目标读者：后续文章作者、内容维护者和接手开发的工程师
 > 迁移背景与开发交接：参见 [`MIGRATION.md`](./MIGRATION.md)
 
 ## 1. 先看结论
@@ -10,7 +10,7 @@
 新文章统一写在：
 
 ```text
-restored-nuxt/content/posts/
+content/posts/
 ```
 
 推荐操作流程：
@@ -68,7 +68,6 @@ Nuxt 页面读取生成后的 JSON 并进行静态预渲染
 在项目目录执行：
 
 ```bash
-cd restored-nuxt
 cp content/posts/_template.md content/posts/draw-a-five-pointed-star.md
 ```
 
@@ -482,7 +481,6 @@ description: "讲解 Turtle circle() 的 radius、extent 和 steps 参数，并�
 首次进入项目：
 
 ```bash
-cd restored-nuxt
 npm ci
 ```
 
@@ -529,6 +527,7 @@ npm run check
 | 命令 | 作用 |
 | --- | --- |
 | `npm run build:data` | 重新生成文章数据、路由、站点地图和 RSS。 |
+| `npm run test` | 检查生成后的内容数据、路由和分类标签索引是否一致。 |
 | `npm run typecheck` | 检查 Nuxt/Vue/TypeScript 类型问题。 |
 | `npm run generate` | 生成可部署的静态网站。 |
 | `npm run verify` | 检查全部路由、站内资源、sitemap、RSS、404 和部署目录。 |
@@ -561,7 +560,7 @@ npm run preview
 - [ ] `date` 使用正确时区。
 - [ ] `draft` 已设为 `false`。
 - [ ] 分类名称与登记值完全一致。
-- [ ] 标签已登记，或已明确接受暂不生成标签页。
+- [ ] 标签已登记；未登记的标签会让内容构建失败。
 - [ ] `description` 不是空值或正文机械截断。
 - [ ] 图片使用站点绝对路径，并已实际打开检查。
 - [ ] Python 示例已运行。
@@ -633,7 +632,7 @@ content-data/routes.json
 
 ## 12. 推荐维护原则
 
-1. **全部内容只写入 `restored-nuxt/content/posts/`。** Hugo 恢复目录仅作为历史备份。
+1. **全部内容只写入 `content/posts/`。** 历史恢复目录不再参与当前 Nuxt 构建。
 2. **旧 URL 尽量不变。** 修订旧文时直接编辑原文件并保留 URL，不要另建相似页面。
 3. **图片与文章一起命名。** 文章 `draw-a-flower.md` 可配套使用 `draw-a-flower-cover.png`、`draw-a-flower-step-1.png`。
 4. **一篇文章解决一个核心问题。** 过大的主题拆成系列，并通过站内链接串联。

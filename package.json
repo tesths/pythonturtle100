@@ -1,5 +1,5 @@
 {
-  "name": "pythonturtle-restored-nuxt",
+  "name": "pythonturtle100",
   "private": true,
   "type": "module",
   "scripts": {
@@ -7,10 +7,11 @@
     "dev": "node scripts/dev.mjs",
     "generate": "npm run build:data && nuxt generate",
     "preview": "nuxt preview",
+    "test": "node --test tests/*.test.mjs",
     "build": "npm run generate",
     "typecheck": "nuxt typecheck",
     "verify": "node scripts/verify-build.mjs",
-    "check": "npm run build:data && npm run typecheck && npm run generate && npm run verify"
+    "check": "npm run build:data && npm run test && npm run typecheck && npm run generate && npm run verify"
   },
   "dependencies": {
     "@nuxt/ui": "4.10.0",
