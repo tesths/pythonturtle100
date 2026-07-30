@@ -1,4 +1,4 @@
-const FALLBACK_SITE_URL = 'https://pythonturtle100.com'
+const FALLBACK_SITE_URL = 'https://www.pythonturtle100.com'
 
 function normalizeSiteUrl(value) {
   const candidate = String(value || '').trim() || FALLBACK_SITE_URL

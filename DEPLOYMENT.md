@@ -4,7 +4,7 @@
 >
 > GitHub 仓库：`tesths/pythonturtle100`
 >
-> 当前站点：`https://pythonturtle100.com`
+> 当前站点：`https://www.pythonturtle100.com`
 
 ## 1. 当前部署状态
 
@@ -12,12 +12,12 @@
 
 已验证地址：
 
-- 首页：`https://pythonturtle100.com/`
-- 示例文章：`https://pythonturtle100.com/turtle100-1/`
-- 分类页：`https://pythonturtle100.com/category/turtle100/`
-- Sitemap：`https://pythonturtle100.com/sitemap.xml`
-- RSS：`https://pythonturtle100.com/rss.xml`
-- Robots：`https://pythonturtle100.com/robots.txt`
+- 首页：`https://www.pythonturtle100.com/`
+- 示例文章：`https://www.pythonturtle100.com/turtle100-1/`
+- 分类页：`https://www.pythonturtle100.com/category/turtle100/`
+- Sitemap：`https://www.pythonturtle100.com/sitemap.xml`
+- RSS：`https://www.pythonturtle100.com/rss.xml`
+- Robots：`https://www.pythonturtle100.com/robots.txt`
 - 不存在的路径返回真实 HTTP 404。
 
 ## 2. Cloudflare Pages 构建配置
@@ -92,7 +92,7 @@ Settings
 
 ```text
 NODE_VERSION = 24.18.0
-SITE_URL = https://pythonturtle100.com
+SITE_URL = https://www.pythonturtle100.com
 ```
 
 仓库中的 `.node-version` 也固定为 `24.18.0`。
@@ -155,16 +155,16 @@ Cloudflare Pages 会自动构建 `main` 分支。部署完成后，在 Cloudflar
 
 ## 6. 域名绑定
 
-域名 `pythonturtle100.com` 购买并接入 Cloudflare DNS 后：
+域名 `pythonturtle100.com` 购买并接入 Cloudflare DNS 后，本项目以 `www.pythonturtle100.com` 为主域名：
 
 1. 进入 `Workers & Pages → pythonturtle100 → Custom domains`。
 2. 点击 `Set up a custom domain`。
-3. 添加根域名 `pythonturtle100.com`。
-4. 可同时添加 `www.pythonturtle100.com`，再用 Redirect Rule 将其 301 跳转到根域名。
+3. 添加主域名 `www.pythonturtle100.com`。
+4. 可同时添加根域名 `pythonturtle100.com`，再用 Bulk Redirect 将其 301 跳转到 `www.pythonturtle100.com`。
 5. 在 Pages 环境变量中修改：
 
 ```text
-SITE_URL = https://pythonturtle100.com
+SITE_URL = https://www.pythonturtle100.com
 ```
 
 6. 重新部署生产分支。

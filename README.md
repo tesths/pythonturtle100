@@ -90,6 +90,6 @@ Node.js version: 24.18.0
 
 域名配置通过环境变量管理：
 
-- 默认使用正式地址 `https://pythonturtle100.com`。
-- 在 Cloudflare Pages 环境变量中设置 `SITE_URL=https://pythonturtle100.com` 并重新部署。
+- 默认使用正式地址 `https://www.pythonturtle100.com`。
+- 在 Cloudflare Pages 环境变量中设置 `SITE_URL=https://www.pythonturtle100.com` 并重新部署。
 - `sitemap.xml`、RSS、robots.txt、canonical、Open Graph 和 JSON-LD 会统一使用该地址。
