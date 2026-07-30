@@ -4,7 +4,7 @@
 >
 > GitHub 仓库：`tesths/pythonturtle100`
 >
-> 当前站点：`https://pythonturtle100.pages.dev`
+> 当前站点：`https://pythonturtle100.com`
 
 ## 1. 当前部署状态
 
@@ -12,12 +12,12 @@
 
 已验证地址：
 
-- 首页：`https://pythonturtle100.pages.dev/`
-- 示例文章：`https://pythonturtle100.pages.dev/turtle100-1/`
-- 分类页：`https://pythonturtle100.pages.dev/category/turtle100/`
-- Sitemap：`https://pythonturtle100.pages.dev/sitemap.xml`
-- RSS：`https://pythonturtle100.pages.dev/rss.xml`
-- Robots：`https://pythonturtle100.pages.dev/robots.txt`
+- 首页：`https://pythonturtle100.com/`
+- 示例文章：`https://pythonturtle100.com/turtle100-1/`
+- 分类页：`https://pythonturtle100.com/category/turtle100/`
+- Sitemap：`https://pythonturtle100.com/sitemap.xml`
+- RSS：`https://pythonturtle100.com/rss.xml`
+- Robots：`https://pythonturtle100.com/robots.txt`
 - 不存在的路径返回真实 HTTP 404。
 
 ## 2. Cloudflare Pages 构建配置
@@ -92,7 +92,7 @@ Settings
 
 ```text
 NODE_VERSION = 24.18.0
-SITE_URL = https://pythonturtle100.pages.dev
+SITE_URL = https://pythonturtle100.com
 ```
 
 仓库中的 `.node-version` 也固定为 `24.18.0`。
@@ -153,24 +153,24 @@ Cloudflare Pages 会自动构建 `main` 分支。部署完成后，在 Cloudflar
 
 还应确认 sitemap、RSS、robots.txt、canonical 和 Open Graph 中使用的是当前 `SITE_URL`。
 
-## 6. 购买并绑定新域名
+## 6. 域名绑定
 
-购买新域名并接入 Cloudflare DNS 后：
+域名 `pythonturtle100.com` 购买并接入 Cloudflare DNS 后：
 
 1. 进入 `Workers & Pages → pythonturtle100 → Custom domains`。
 2. 点击 `Set up a custom domain`。
-3. 添加根域名，例如 `example.com`。
-4. 可同时添加 `www.example.com`，再用 Redirect Rule 将其 301 跳转到根域名。
+3. 添加根域名 `pythonturtle100.com`。
+4. 可同时添加 `www.pythonturtle100.com`，再用 Redirect Rule 将其 301 跳转到根域名。
 5. 在 Pages 环境变量中修改：
 
 ```text
-SITE_URL = https://example.com
+SITE_URL = https://pythonturtle100.com
 ```
 
 6. 重新部署生产分支。
 7. 检查 sitemap、RSS、robots.txt、canonical 和 Open Graph 均已切换为新域名。
 
-代码中不需要写死新域名。
+`site.config.mjs` 已将正式域名作为本地构建回退地址；Cloudflare 仍建议显式设置 `SITE_URL`，避免未来环境差异。
 
 ## 7. 常见故障
 
