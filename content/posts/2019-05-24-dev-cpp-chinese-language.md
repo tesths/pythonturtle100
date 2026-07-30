@@ -1,37 +1,41 @@
-+++
-title = "Dev-Cpp 切换界面语言中文"
-date = "2019-05-24T20:43:16-08:00"
-lastmod = "2019-11-25T01:28:32-08:00"
-draft = false
-url = "/dev-cpp-chinese-language/"
-slug = "dev-cpp-chinese-language"
-author = "judi0713@sina.com"
-categories = ["常用工具"]
-tags = ["少儿编程"]
-wordpress_id = 95
-wordpress_guid = "https://python.local/?p=95"
-wordpress_status = "publish"
-wordpress_type = "post"
-thumbnail = "/wp-content/uploads/2019/05/2019052504005176.png"
-wp_meta_views = "546"
-wp_meta_git_baidu_submit = "1"
-wp_meta_bigfa_ding = "8"
-+++
+---
+title: "Dev-Cpp 切换界面语言中文"
+date: "2019-05-24T20:43:16-08:00"
+lastmod: "2019-11-25T01:28:32-08:00"
+slug: "dev-cpp-chinese-language"
+url: "/dev-cpp-chinese-language/"
+author: "judi0713@sina.com"
+categories:
+  - "常用工具"
+tags:
+  - "少儿编程"
+description: "Dev-Cpp 切换界面语言中文，说明少儿编程学习中常用工具的下载、安装或配置方式。"
+thumbnail: "/images/posts/tools/dev-cpp-chinese-language-01.png"
+draft: false
+---
 
 经常遇到有学生安装 Dev-Cpp 的时候一次性安装到英文界面。导致不知道该如何编程，下面介绍写如何在 Dev-Cpp 中切换语言。
 
-<strong>1. 打开 Dev-Cpp，选择 Tools -&gt; Environment Options</strong>
+**1. 打开 Dev-Cpp，选择 Tools -> Environment Options**
 
-<figure class="wp-caption aligncenter"><a href="/wp-content/uploads/2019/05/2019052504005176.png"><img class="wp-image-98 size-full" src="/wp-content/uploads/2019/05/2019052504005176.png" alt="dev-cpp change language" width="1171" height="867" /></a><figcaption>Dev-Cpp 切换界面语言中文</figcaption></figure>
+![dev-cpp change language](/images/posts/tools/dev-cpp-chinese-language-01.png)
 
-<strong>2. 找到 Language，选择 简体中文。</strong>
+*Dev-Cpp 切换界面语言中文*
 
-<figure class="wp-caption aligncenter"><a href="/wp-content/uploads/2019/05/2019052504004335.png"><img class="wp-image-97 size-full" src="/wp-content/uploads/2019/05/2019052504004335.png" alt="dev-cpp change language" width="1228" height="870" /></a><figcaption>Dev-Cpp 切换界面语言中文</figcaption></figure>
+**2. 找到 Language，选择 简体中文。**
 
-<strong>3. 点击 OK。</strong>
+![dev-cpp change language](/images/posts/tools/dev-cpp-chinese-language-02.png)
 
-<figure class="wp-caption aligncenter"><a href="/wp-content/uploads/2019/05/2019052504025166.jpg"><img class="wp-image-100 size-full" src="/wp-content/uploads/2019/05/2019052504025166.jpg" alt="dev-cpp change language" width="1190" height="830" /></a><figcaption>Dev-Cpp 切换界面语言中文</figcaption></figure>
+*Dev-Cpp 切换界面语言中文*
 
-<strong>4. 界面语言切换完毕。</strong>
+**3. 点击 OK。**
 
-<figure class="wp-caption aligncenter"><a href="/wp-content/uploads/2019/05/2019052504010038.jpg"><img class="wp-image-99 size-full" src="/wp-content/uploads/2019/05/2019052504010038.jpg" alt="dev-cpp change language" width="1158" height="835" /></a><figcaption>Dev-Cpp 切换界面语言中文</figcaption></figure>
+![dev-cpp change language](/images/posts/tools/dev-cpp-chinese-language-03.jpg)
+
+*Dev-Cpp 切换界面语言中文*
+
+**4. 界面语言切换完毕。**
+
+![dev-cpp change language](/images/posts/tools/dev-cpp-chinese-language-04.jpg)
+
+*Dev-Cpp 切换界面语言中文*

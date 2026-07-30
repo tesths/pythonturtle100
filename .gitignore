@@ -40,9 +40,3 @@ pnpm-debug.log*
 *.tmp
 *.swp
 *~
-
-# Unreferenced legacy installers; keep out of Git and move to object storage if restored later
-public/wp-content/uploads/2019/08/AdobeAIR.zip
-public/wp-content/uploads/2019/08/AdobeAIRInstaller.zip
-public/wp-content/uploads/2019/08/python-2.7.14.zip
-public/wp-content/uploads/2019/08/python-2.7.14-amd64.zip

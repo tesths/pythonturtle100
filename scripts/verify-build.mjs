@@ -65,6 +65,11 @@ if (site && routes) {
     check(post.url && uniqueRoutes.has(post.url), `Post route missing from route index: ${post.url || post.title}`)
     check(post.sourceFile?.startsWith('content/posts/'), `Post source is outside local content: ${post.sourceFile || post.title}`)
     check(existsSync(join(ROOT, post.sourceFile || '')), `Post source file missing: ${post.sourceFile || post.title}`)
+    check(!String(post.content || '').includes('/wp-content/uploads'), `Post content still references legacy uploads: ${post.url || post.title}`)
+    if (post.thumbnail) {
+      check(String(post.thumbnail).startsWith('/images/posts/'), `Post thumbnail is outside Nuxt image directory: ${post.url || post.title}`)
+      check(existsSync(join(ROOT, 'public', post.thumbnail.replace(/^\//, ''))), `Post thumbnail asset missing: ${post.thumbnail}`)
+    }
   }
 
   const missingAssets = new Set()
@@ -109,6 +114,7 @@ if (site && routes) {
     check(urlCount === routes.length, `Sitemap URL count ${urlCount} does not match route count ${routes.length}`)
     check(sitemapUrls.length === routes.length, `Sitemap loc count ${sitemapUrls.length} does not match route count ${routes.length}`)
     check(sitemapUrls.every((url) => url === site.url || url.startsWith(`${site.url}/`)), `Sitemap contains URLs outside ${site.url}`)
+    check(!sitemap.includes('/wp-content/uploads'), 'Sitemap contains legacy uploads path')
   }
 
   if (existsSync(robotsPath)) {

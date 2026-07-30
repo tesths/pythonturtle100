@@ -31,22 +31,7 @@ function parseFrontMatter(text) {
     }
   }
 
-  const tomlMatch = text.match(/^\+\+\+\n([\s\S]*?)\n\+\+\+\n?([\s\S]*)$/)
-  if (!tomlMatch) {
-    return { data: {}, body: text }
-  }
-
-  const data = {}
-  for (const line of tomlMatch[1].split('\n')) {
-    const trimmed = line.trim()
-    if (!trimmed || trimmed.startsWith('#')) continue
-    const split = trimmed.match(/^([A-Za-z0-9_-]+)\s*=\s*(.*)$/)
-    if (!split) continue
-    const [, key, rawValue] = split
-    data[key] = parseTomlValue(rawValue.trim())
-  }
-
-  return { data, body: tomlMatch[2].trim() }
+  return { data: {}, body: text }
 }
 
 function renderMarkdown(body) {
@@ -55,28 +40,6 @@ function renderMarkdown(body) {
     breaks: false,
     async: false
   })
-}
-
-function parseTomlValue(raw) {
-  if (raw === 'true') return true
-  if (raw === 'false') return false
-  if (raw === 'null') return null
-  if (/^-?\d+(\.\d+)?$/.test(raw)) return Number(raw)
-  if (raw.startsWith('[')) {
-    try {
-      return JSON.parse(raw)
-    } catch {
-      return raw
-    }
-  }
-  if (raw.startsWith('"') && raw.endsWith('"')) {
-    try {
-      return JSON.parse(raw)
-    } catch {
-      return raw.slice(1, -1)
-    }
-  }
-  return raw
 }
 
 function stripHtml(html) {
@@ -221,11 +184,9 @@ function enhanceHtml(html) {
   const usedIds = new Map()
   let headingIndex = 0
 
-  const withCodePanels = html
-    .replace(/<pre([^>]*)>([\s\S]*?)<\/pre>/gi, (_, attrs, code) => {
-      return `<div class="nuxt-code-panel" data-code-panel><div class="nuxt-code-toolbar"><span>Python</span><button type="button" data-copy-code>复制</button></div><pre${attrs}>${code}</pre></div>`
-    })
-    .replace(/\sclass="wp-caption([^"]*)"/g, ' class="wp-caption$1 nuxt-content-figure"')
+  const withCodePanels = html.replace(/<pre([^>]*)>([\s\S]*?)<\/pre>/gi, (_, attrs, code) => {
+    return `<div class="nuxt-code-panel" data-code-panel><div class="nuxt-code-toolbar"><span>Python</span><button type="button" data-copy-code>复制</button></div><pre${attrs}>${code}</pre></div>`
+  })
 
   const content = withCodePanels.replace(/<h([23])([^>]*)>([\s\S]*?)<\/h\1>/gi, (match, level, attrs, inner) => {
     headingIndex += 1
@@ -325,7 +286,7 @@ for (const file of postFiles) {
   }
 
   postsByUrl.set(url, {
-    id: data.wordpress_id || data.id || slug,
+    id: data.id || slug,
     title: data.title || slug || fallbackSlug,
     date: data.date || '',
     lastmod: data.lastmod || data.date || '',
