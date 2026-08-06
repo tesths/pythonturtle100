@@ -23,6 +23,20 @@ export default defineNuxtConfig({
     enabled: false
   },
 
+  vite: {
+    build: {
+      chunkSizeWarningLimit: 800,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined
+            return 'vendor'
+          }
+        }
+      }
+    }
+  },
+
   app: {
     head: {
       htmlAttrs: { lang: 'zh-CN' },

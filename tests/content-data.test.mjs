@@ -7,11 +7,17 @@ import test from 'node:test'
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const SITE_FILE = join(ROOT, 'content-data', 'site.json')
 const ROUTES_FILE = join(ROOT, 'content-data', 'routes.json')
+const POST_DETAILS_DIR = join(ROOT, 'content-data', 'posts')
 const POSTS_DIR = join(ROOT, 'content', 'posts')
 
 function readJson(path) {
   assert.equal(existsSync(path), true, `Expected generated file to exist: ${path}`)
   return JSON.parse(readFileSync(path, 'utf8'))
+}
+
+function readPostDetails(post) {
+  assert.ok(post.contentFile, `${post.title} should reference a generated content file`)
+  return readJson(join(POST_DETAILS_DIR, post.contentFile))
 }
 
 test('generated route indexes stay in sync', () => {
@@ -34,8 +40,10 @@ test('published posts have normalized routes and local source files', () => {
   for (const post of site.posts) {
     assert.match(post.url, /^\/.+\/$/, `${post.title} should use a normalized route`)
     assert.equal(routes.has(post.url), true, `${post.url} should be prerendered`)
+    assert.match(post.contentFile, /^[^/]+\.json$/, `${post.title} should reference local post content JSON`)
     assert.match(post.sourceFile, /^content\/posts\/[^/]+\.md$/, `${post.title} should come from content/posts`)
     assert.equal(existsSync(join(ROOT, post.sourceFile)), true, `${post.sourceFile} should exist`)
+    assert.equal(existsSync(join(POST_DETAILS_DIR, post.contentFile)), true, `${post.contentFile} should exist`)
   }
 })
 
@@ -51,7 +59,7 @@ test('taxonomy and index routes are present', () => {
     assert.ok(Array.isArray(group), 'taxonomy groups should be arrays')
     for (const term of group) {
       assert.equal(routes.has(term.url), true, `${term.url} should be prerendered`)
-      assert.ok(term.posts.length > 0, `${term.name} should have posts`)
+      assert.ok(term.count > 0, `${term.name} should have posts`)
     }
   }
 })
@@ -94,7 +102,8 @@ test('generated posts reference Nuxt-native thumbnails and content assets', () =
   const site = readJson(SITE_FILE)
 
   for (const post of site.posts) {
-    assert.doesNotMatch(post.content, /wp-content|wp-caption|wp-image/i, `${post.url} should not render legacy asset markup`)
+    const details = readPostDetails(post)
+    assert.doesNotMatch(details.content, /wp-content|wp-caption|wp-image/i, `${post.url} should not render legacy asset markup`)
     if (post.thumbnail) {
       assert.match(post.thumbnail, /^\/images\/posts\//, `${post.url} thumbnail should use the Nuxt image directory`)
       assert.equal(existsSync(join(ROOT, 'public', post.thumbnail.replace(/^\//, ''))), true, `${post.url} thumbnail should exist`)

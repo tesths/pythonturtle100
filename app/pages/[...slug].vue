@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import site from '#content-data/site.json'
 
+const postDetailModules = import.meta.glob('../../content-data/posts/*.json')
+
 definePageMeta({
   layout: 'docs',
   key: route => route.fullPath
@@ -46,9 +48,29 @@ const contentPath = computed(() => {
 })
 const currentPage = computed(() => Number(paginationMatch.value?.[2] || 1))
 
-const post = computed(() => site.posts.find((item: any) => normalize(item.url) === contentPath.value))
+const postSummary = computed(() => site.posts.find((item: any) => normalize(item.url) === contentPath.value))
 const category = computed(() => site.categories.find((item: any) => normalize(item.url) === contentPath.value))
 const tag = computed(() => site.tags.find((item: any) => normalize(item.url) === contentPath.value))
+
+const postDetails = shallowRef<any | null>(null)
+if (postSummary.value) {
+  const detailPath = `../../content-data/posts/${postSummary.value.contentFile}`
+  const loadDetails = postDetailModules[detailPath]
+  if (!loadDetails) {
+    throw createError({
+      statusCode: 404,
+      message: '文章内容未找到',
+      fatal: true
+    })
+  }
+
+  const module = await loadDetails() as { default: any }
+  postDetails.value = module.default
+}
+
+const post = computed(() => postSummary.value && postDetails.value
+  ? { ...postSummary.value, ...postDetails.value }
+  : undefined)
 
 const isPostsIndex = computed(() => contentPath.value === '/posts/')
 const isCategoryIndex = computed(() => contentPath.value === '/category/')
@@ -56,8 +78,12 @@ const isTagIndex = computed(() => contentPath.value === '/tag/')
 const isArchives = computed(() => contentPath.value === '/archives/')
 
 const listPosts = computed<any[]>(() => {
-  if (category.value) return category.value.posts
-  if (tag.value) return tag.value.posts
+  const selectedCategory = category.value
+  if (selectedCategory) return site.posts.filter((item: any) => item.categories?.includes(selectedCategory.name))
+
+  const selectedTag = tag.value
+  if (selectedTag) return site.posts.filter((item: any) => item.tags?.includes(selectedTag.name))
+
   if (isPostsIndex.value) return site.posts
   return []
 })
@@ -69,7 +95,7 @@ const hasCanonicalPagination = computed(() => currentPage.value === 1
   ? !paginationMatch.value
   : Boolean(paginationMatch.value))
 const isValidRoute = computed(() => {
-  if (post.value || isCategoryIndex.value || isTagIndex.value) {
+  if (postSummary.value || isCategoryIndex.value || isTagIndex.value) {
     return !paginationMatch.value
   }
 
@@ -103,16 +129,30 @@ const pageTitle = computed(() => currentPage.value > 1 && !post.value
   ? `${basePageTitle.value} · 第 ${currentPage.value} 页`
   : basePageTitle.value)
 
-const pageDescription = computed(() => {
+const basePageDescription = computed(() => {
   if (post.value) return post.value.summary || site.description
-  if (category.value) return `${category.value.count} 篇相关文章`
-  if (tag.value) return `${tag.value.count} 篇相关文章`
-  if (isPostsIndex.value) return `${site.posts.length} 篇文章`
+  if (category.value) return category.value.description || `${category.value.count} 篇相关文章`
+  if (tag.value) return tag.value.description || `${tag.value.count} 篇相关文章`
+  if (isPostsIndex.value) return `按发布时间浏览 ${site.posts.length} 篇 Python Turtle 海龟绘图教程、题解、分类和工具文章。`
   if (isCategoryIndex.value) return '按主题浏览全部文章。'
-  if (isTagIndex.value) return '按标签浏览文章。'
-  if (isArchives.value) return '按年份整理的全部文章。'
+  if (isTagIndex.value) return '按标签浏览 Python Turtle 和少儿编程相关文章；标签页用于站内导航。'
+  if (isArchives.value) return '按年份整理 Python Turtle 海龟绘图文章，方便回看历史发布内容。'
   return '这个路径没有对应的内容。'
 })
+
+const pageDescription = computed(() => {
+  if (currentPage.value <= 1 || post.value) return basePageDescription.value
+  return `${basePageDescription.value}第 ${currentPage.value} 页，继续浏览相关条目。`
+})
+
+const isNoindexPage = computed(() => {
+  if (isTagIndex.value || tag.value || isArchives.value) return true
+  return currentPage.value > 1 && !post.value
+})
+
+const robotsContent = computed(() => isNoindexPage.value
+  ? 'noindex, follow'
+  : 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1')
 
 const canonicalPath = computed(() => post.value ? contentPath.value : currentPath.value)
 const canonicalUrl = computed(() => new URL(canonicalPath.value, siteUrl).toString())
@@ -170,6 +210,7 @@ const breadcrumbs = computed(() => {
 useSeoMeta({
   title: pageTitle.value,
   description: pageDescription.value,
+  robots: robotsContent.value,
   ogTitle: pageTitle.value,
   ogDescription: pageDescription.value,
   ogType: post.value ? 'article' : 'website',
@@ -210,6 +251,7 @@ useHead({
               url: canonicalUrl.value,
               datePublished: post.value.date,
               dateModified: post.value.lastmod || post.value.date,
+              inLanguage: 'zh-CN',
               mainEntityOfPage: canonicalUrl.value,
               author: {
                 '@type': 'Organization',
@@ -219,7 +261,11 @@ useHead({
               publisher: {
                 '@type': 'Organization',
                 name: site.title,
-                url: siteUrl
+                url: siteUrl,
+                logo: {
+                  '@type': 'ImageObject',
+                  url: defaultOgImage
+                }
               },
               image: socialImage.value
             }
@@ -252,7 +298,7 @@ const paginatedArchives = computed(() => {
 
 const termCards = computed(() => (isCategoryIndex.value ? site.categories : site.tags).map((term: any) => ({
   title: term.name,
-  description: `${term.count} 篇文章`,
+  description: term.description || `${term.count} 篇文章`,
   to: term.url,
   icon: isCategoryIndex.value ? 'i-lucide-folder-tree' : 'i-lucide-tag'
 })))

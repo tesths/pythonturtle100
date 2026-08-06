@@ -36,7 +36,7 @@ const items = computed(() => site.menu.map((item: any) => ({
     />
 
     <template #right>
-      <AppSearch />
+      <LazyAppSearch />
       <UButton
         to="/posts/"
         label="全部文章"

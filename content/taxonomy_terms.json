@@ -4,24 +4,28 @@
       "name": "海龟绘图 100 题",
       "slug": "turtle100",
       "url": "/category/turtle100/",
+      "description": "按题目顺序学习 Python Turtle 海龟绘图，覆盖直线、三角形、多边形、圆弧、星形和组合图案，适合少儿编程入门练习。",
       "count": 113
     },
     {
       "name": "常用工具",
       "slug": "common-tools",
       "url": "/category/common-tools/",
+      "description": "整理 Python、Scratch、Dev-C++ 等少儿编程常用工具的下载、安装和配置说明，帮助读者完成学习环境准备。",
       "count": 4
     },
     {
       "name": "海龟绘图详解",
       "slug": "turtle-detailed",
       "url": "/category/turtle-detailed/",
+      "description": "围绕 Python Turtle 绘图方法、圆和圆弧、多边形、多角星等主题做专题讲解，帮助读者理解图形背后的角度和步骤。",
       "count": 4
     },
     {
       "name": "常用方法索引",
       "slug": "widely-used-functions",
       "url": "/category/widely-used-functions/",
+      "description": "按用途整理 Python Turtle 常用方法、参数、别名和示例，方便学习者快速查找绘图命令。",
       "count": 1
     }
   ],
@@ -30,30 +34,45 @@
       "name": "少儿编程",
       "slug": "%e5%b0%91%e5%84%bf%e7%bc%96%e7%a8%8b",
       "url": "/tag/%e5%b0%91%e5%84%bf%e7%bc%96%e7%a8%8b/",
+      "description": "少儿编程相关文章标签页，用于站内浏览，不作为独立搜索入口。",
+      "robots": "noindex, follow",
+      "includeInSitemap": false,
       "count": 121
     },
     {
       "name": "turtle graphics 100 exercises",
       "slug": "turtle-graphics-100-exercises",
       "url": "/tag/turtle-graphics-100-exercises/",
+      "description": "Python Turtle 100 题英文标签页，用于站内聚合，不作为独立搜索入口。",
+      "robots": "noindex, follow",
+      "includeInSitemap": false,
       "count": 116
     },
     {
       "name": "海龟绘图 100 题",
       "slug": "turtle100",
       "url": "/tag/turtle100/",
+      "description": "海龟绘图 100 题标签页，用于站内浏览；主要搜索入口保留分类页。",
+      "robots": "noindex, follow",
+      "includeInSitemap": false,
       "count": 116
     },
     {
       "name": "工具",
       "slug": "%e5%b7%a5%e5%85%b7",
       "url": "/tag/%e5%b7%a5%e5%85%b7/",
+      "description": "编程学习工具相关文章标签页，用于站内聚合，不作为独立搜索入口。",
+      "robots": "noindex, follow",
+      "includeInSitemap": false,
       "count": 3
     },
     {
       "name": "软件",
       "slug": "%e8%bd%af%e4%bb%b6",
       "url": "/tag/%e8%bd%af%e4%bb%b6/",
+      "description": "软件安装和下载相关文章标签页，用于站内聚合，不作为独立搜索入口。",
+      "robots": "noindex, follow",
+      "includeInSitemap": false,
       "count": 3
     }
   ]

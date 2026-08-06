@@ -15,6 +15,7 @@ function normalize(path: string) {
 }
 
 const currentPath = computed(() => normalize(route.path))
+const currentPost = computed(() => site.posts.find((post: any) => normalize(post.url) === currentPath.value))
 
 const primaryItems = computed(() => [
   {
@@ -38,7 +39,7 @@ const categoryItems = computed(() => site.categories.map((category: any) => ({
   to: category.url,
   badge: String(category.count),
   active: currentPath.value === normalize(category.url)
-    || Boolean(category.posts?.some((post: any) => normalize(post.url) === currentPath.value))
+    || Boolean(currentPost.value?.categories?.includes(category.name))
 })))
 
 const indexItems = computed(() => [

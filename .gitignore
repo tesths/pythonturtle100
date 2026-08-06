@@ -31,6 +31,9 @@ coverage/
 *.local
 .npmrc
 
+# Third-party tools
+qiaomu-seo-main/
+
 # Logs and temporary files
 *.log
 npm-debug.log*

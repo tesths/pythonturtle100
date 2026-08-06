@@ -9,6 +9,8 @@ const PAGE_SIZE = 12
 const totalPages = Math.ceil(site.posts.length / PAGE_SIZE)
 const currentPage = Number(route.params.page)
 const canonicalUrl = currentPage === 1 ? `${siteUrl}/` : `${siteUrl}/page/${currentPage}/`
+const pageTitle = `最新文章 · 第 ${currentPage} 页`
+const pageDescription = `按发布时间浏览 Python Turtle 海龟绘图教程和题解第 ${currentPage} 页，继续查看历史文章。`
 
 if (!Number.isInteger(currentPage) || currentPage < 2 || currentPage > totalPages) {
   throw createError({
@@ -19,16 +21,17 @@ if (!Number.isInteger(currentPage) || currentPage < 2 || currentPage > totalPage
 }
 
 useSeoMeta({
-  title: `最新文章 · 第 ${currentPage} 页`,
-  description: site.description,
-  ogTitle: `最新文章 · 第 ${currentPage} 页`,
-  ogDescription: site.description,
+  title: pageTitle,
+  description: pageDescription,
+  robots: 'noindex, follow',
+  ogTitle: pageTitle,
+  ogDescription: pageDescription,
   ogType: 'website',
   ogUrl: canonicalUrl,
   ogImage: defaultOgImage,
   twitterCard: 'summary_large_image',
-  twitterTitle: `最新文章 · 第 ${currentPage} 页`,
-  twitterDescription: site.description,
+  twitterTitle: pageTitle,
+  twitterDescription: pageDescription,
   twitterImage: defaultOgImage
 })
 
@@ -40,9 +43,9 @@ useHead({
       innerHTML: JSON.stringify({
         '@context': 'https://schema.org',
         '@type': 'CollectionPage',
-        name: `最新文章 · 第 ${currentPage} 页`,
+        name: pageTitle,
         url: canonicalUrl,
-        description: site.description,
+        description: pageDescription,
         isPartOf: {
           '@type': 'WebSite',
           name: site.title,

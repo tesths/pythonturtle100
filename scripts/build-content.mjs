@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { basename, join, relative } from 'node:path'
 import { marked } from 'marked'
@@ -9,6 +9,7 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const POSTS_DIR = join(ROOT, 'content', 'posts')
 const TAXONOMY_FILE = join(ROOT, 'content', 'taxonomy_terms.json')
 const OUT_DIR = join(ROOT, 'content-data')
+const POST_DETAILS_DIR = join(OUT_DIR, 'posts')
 
 function ensureDir(path) {
   mkdirSync(path, { recursive: true })
@@ -252,7 +253,28 @@ function paginateRoutes(baseUrl, totalItems, pageSize = 12) {
   return routes
 }
 
+function isPaginatedRoute(route) {
+  return /\/page\/\d+\/$/.test(route)
+}
+
+function isTagRoute(route) {
+  return route === '/tag/' || route.startsWith('/tag/')
+}
+
+function isArchiveRoute(route) {
+  return route === '/archives/' || route.startsWith('/archives/page/')
+}
+
+function isSitemapRoute(route) {
+  if (isPaginatedRoute(route)) return false
+  if (isTagRoute(route)) return false
+  if (isArchiveRoute(route)) return false
+  return true
+}
+
 ensureDir(OUT_DIR)
+rmSync(POST_DETAILS_DIR, { recursive: true, force: true })
+ensureDir(POST_DETAILS_DIR)
 
 const taxonomy = readTaxonomy()
 const categoriesByName = new Map(taxonomy.categories.map((item) => [termKey(item.name), item]))
@@ -290,8 +312,10 @@ for (const file of postFiles) {
     title: data.title || slug || fallbackSlug,
     date: data.date || '',
     lastmod: data.lastmod || data.date || '',
+    author: data.author || '',
     url,
     slug,
+    contentFile: `${slug}.json`,
     sourceFile: relative(ROOT, file),
     categories,
     tags,
@@ -304,6 +328,13 @@ for (const file of postFiles) {
 
 const posts = [...postsByUrl.values()]
   .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+
+for (const post of posts) {
+  writeFileSync(join(POST_DETAILS_DIR, post.contentFile), `${JSON.stringify({
+    content: post.content,
+    toc: post.toc
+  }, null, 2)}\n`)
+}
 
 const postsByCategory = new Map()
 const postsByTag = new Map()
@@ -332,8 +363,7 @@ const categories = taxonomy.categories
     const categoryPosts = postsByCategory.get(termKey(item.name)) || []
     return {
       ...item,
-      count: categoryPosts.length,
-      posts: categoryPosts
+      count: categoryPosts.length
     }
   })
   .sort((left, right) => (categoryOrder.get(left.name) ?? 99) - (categoryOrder.get(right.name) ?? 99))
@@ -342,8 +372,7 @@ const tags = taxonomy.tags.map((item) => {
   const tagPosts = postsByTag.get(termKey(item.name)) || []
   return {
     ...item,
-    count: tagPosts.length,
-    posts: tagPosts
+    count: tagPosts.length
   }
 })
 
@@ -352,8 +381,8 @@ const paginationRoutes = [
   ...paginateRoutes('/', posts.length, paginationSize),
   ...paginateRoutes('/posts/', posts.length, paginationSize),
   ...paginateRoutes('/archives/', posts.length, paginationSize),
-  ...categories.flatMap((item) => paginateRoutes(item.url, item.posts.length, paginationSize)),
-  ...tags.flatMap((item) => paginateRoutes(item.url, item.posts.length, paginationSize))
+  ...categories.flatMap((item) => paginateRoutes(item.url, item.count, paginationSize)),
+  ...tags.flatMap((item) => paginateRoutes(item.url, item.count, paginationSize))
 ]
 
 const routes = [
@@ -373,7 +402,8 @@ if (duplicateRoutes.length) {
   throw new Error(`Duplicate generated routes: ${[...new Set(duplicateRoutes)].join(', ')}`)
 }
 
-const sitemapEntries = [...new Map(routes.map((route) => [route, { loc: siteUrl(route), lastmod: '' }])).values()]
+const sitemapRoutes = routes.filter(isSitemapRoute)
+const sitemapEntries = [...new Map(sitemapRoutes.map((route) => [route, { loc: siteUrl(route), lastmod: '' }])).values()]
 for (const entry of sitemapEntries) {
   const routePath = normalizePath(new URL(entry.loc).pathname)
   const post = posts.find((item) => item.url === routePath)
@@ -385,11 +415,12 @@ const robotsTxt = buildRobotsTxt()
 
 const site = {
   ...siteConfig,
-  posts,
+  posts: posts.map(toListPost),
   categories,
   tags,
-  archives: groupByYear(posts.map(toListPost)),
-  routes
+  archives: groupByYear(posts.map(toListPost)).map(({ year, count }) => ({ year, count })),
+  routes,
+  sitemapRoutes
 }
 
 writeFileSync(join(OUT_DIR, 'site.json'), `${JSON.stringify(site, null, 2)}\n`)
