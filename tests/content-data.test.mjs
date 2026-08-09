@@ -110,3 +110,14 @@ test('generated posts reference Nuxt-native thumbnails and content assets', () =
     }
   }
 })
+
+test('draw-polygon math renders as KaTeX', () => {
+  const site = readJson(SITE_FILE)
+  const post = site.posts.find((item) => item.url === '/draw-polygon/')
+  assert.ok(post, 'draw-polygon post should exist')
+
+  const details = readPostDetails(post)
+  assert.match(details.content, /class="katex"/, '/draw-polygon/ should render math with KaTeX markup')
+  assert.doesNotMatch(details.content, /\$[^<]*\\frac|\$\(n|\$d\s*=/, '/draw-polygon/ should not leave raw inline TeX in HTML')
+  assert.doesNotMatch(details.content, /3<em>120=4<\/em>90/, '/draw-polygon/ should not parse multiplication signs as emphasis')
+})

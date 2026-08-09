@@ -11,7 +11,7 @@ export default defineNuxtConfig({
 
   modules: ['@nuxt/ui'],
 
-  css: ['~/assets/css/main.css'],
+  css: ['katex/dist/katex.min.css', '~/assets/css/main.css'],
 
   alias: {
     '#content-data': fileURLToPath(new URL('./content-data', import.meta.url))

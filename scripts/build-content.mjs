@@ -2,8 +2,14 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { fileURLToPath } from 'node:url'
 import { basename, join, relative } from 'node:path'
 import { marked } from 'marked'
+import markedKatex from 'marked-katex-extension'
 import { parse as parseYaml } from 'yaml'
 import siteConfig from '../site.config.mjs'
+
+marked.use(markedKatex({
+  throwOnError: false,
+  nonStandard: true
+}))
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const POSTS_DIR = join(ROOT, 'content', 'posts')
