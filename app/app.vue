@@ -4,6 +4,29 @@ import site from '#content-data/site.json'
 
 const siteUrl = site.url
 const defaultOgImage = `${siteUrl}/og-default.png`
+const route = useRoute()
+
+type AnalyticsWindow = Window & {
+  gtag?: (...args: unknown[]) => void
+}
+
+const trackPageView = () => {
+  if (!import.meta.client) return
+
+  const gtag = (window as AnalyticsWindow).gtag
+  if (typeof gtag !== 'function') return
+
+  gtag('event', 'page_view', {
+    page_location: window.location.href,
+    page_path: route.fullPath,
+    page_title: document.title
+  })
+}
+
+watch(() => route.fullPath, async () => {
+  await nextTick()
+  trackPageView()
+})
 
 useHead({
   meta: [
@@ -12,6 +35,20 @@ useHead({
   link: [
     { rel: 'icon', href: '/favicon.ico' },
     { rel: 'alternate', type: 'application/rss+xml', title: `${site.title} RSS`, href: `${siteUrl}/rss.xml` }
+  ],
+  script: [
+    {
+      async: true,
+      src: 'https://www.googletagmanager.com/gtag/js?id=G-PEMB434B76'
+    },
+    {
+      innerHTML: `
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-PEMB434B76');
+      `
+    }
   ],
   htmlAttrs: {
     lang: 'zh-CN'
