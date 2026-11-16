@@ -6,11 +6,11 @@ const defaultOgImage = `${siteUrl}/og-default.png`
 
 const route = useRoute()
 const PAGE_SIZE = 12
-const totalPages = Math.ceil(site.posts.length / PAGE_SIZE)
+const totalPages = Math.ceil(site.homePosts.length / PAGE_SIZE)
 const currentPage = Number(route.params.page)
 const canonicalUrl = currentPage === 1 ? `${siteUrl}/` : `${siteUrl}/page/${currentPage}/`
-const pageTitle = `最新文章 · 第 ${currentPage} 页`
-const pageDescription = `按发布时间浏览 Python Turtle 海龟绘图教程和题解第 ${currentPage} 页，继续查看历史文章。`
+const pageTitle = `全部题目 · 第 ${currentPage} 页`
+const pageDescription = `按题目顺序浏览 Python Turtle 海龟绘图 100 题第 ${currentPage} 页，继续查看后续题目。`
 
 if (!Number.isInteger(currentPage) || currentPage < 2 || currentPage > totalPages) {
   throw createError({

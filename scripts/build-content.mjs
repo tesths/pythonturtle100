@@ -335,6 +335,16 @@ for (const file of postFiles) {
 const posts = [...postsByUrl.values()]
   .sort((a, b) => String(b.date).localeCompare(String(a.date)))
 
+// 首页只展示「海龟绘图 100 题」并按题号 1、2、3……升序排列。
+function problemNumber(post) {
+  const match = String(post.url).match(/^\/turtle100-(\d+)\/$/)
+  return match ? Number(match[1]) : Number.POSITIVE_INFINITY
+}
+
+const homePosts = posts
+  .filter((post) => Number.isFinite(problemNumber(post)))
+  .sort((left, right) => problemNumber(left) - problemNumber(right))
+
 for (const post of posts) {
   writeFileSync(join(POST_DETAILS_DIR, post.contentFile), `${JSON.stringify({
     content: post.content,
@@ -384,7 +394,7 @@ const tags = taxonomy.tags.map((item) => {
 
 const paginationSize = 12
 const paginationRoutes = [
-  ...paginateRoutes('/', posts.length, paginationSize),
+  ...paginateRoutes('/', homePosts.length, paginationSize),
   ...paginateRoutes('/posts/', posts.length, paginationSize),
   ...paginateRoutes('/archives/', posts.length, paginationSize),
   ...categories.flatMap((item) => paginateRoutes(item.url, item.count, paginationSize)),
@@ -422,6 +432,7 @@ const robotsTxt = buildRobotsTxt()
 const site = {
   ...siteConfig,
   posts: posts.map(toListPost),
+  homePosts: homePosts.map(toListPost),
   categories,
   tags,
   archives: groupByYear(posts.map(toListPost)).map(({ year, count }) => ({ year, count })),

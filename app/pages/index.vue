@@ -18,7 +18,7 @@ useHead({
         description: site.description,
         mainEntity: {
           '@type': 'ItemList',
-          numberOfItems: site.posts.length
+          numberOfItems: site.homePosts.length
         }
       })
     }
