@@ -72,6 +72,38 @@ const post = computed(() => postSummary.value && postDetails.value
   ? { ...postSummary.value, ...postDetails.value }
   : undefined)
 
+// B1: 题目页「在线运行」——大题号页（/turtle100-N/）展示可运行的参考代码。
+const problemMatch = computed(() => contentPath.value.match(/^\/turtle100-(\d+)\/$/))
+const isProblemPage = computed(() => Boolean(problemMatch.value))
+const problemNumber = computed(() => (problemMatch.value ? Number(problemMatch.value[1]) : 0))
+
+function decodeHtmlEntities(text: string): string {
+  return String(text || '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&amp;/g, '&')
+}
+
+// 从渲染后的正文中取「最后一个 python 代码块」作为可运行的参考答案。
+const runnableCode = computed(() => {
+  if (!isProblemPage.value || !post.value) return ''
+  const html = String(post.value.content || '')
+  const blocks = [...html.matchAll(/<pre[^>]*>\s*<code[^>]*>([\s\S]*?)<\/code>\s*<\/pre>/g)]
+  if (!blocks.length) return ''
+  const raw = blocks[blocks.length - 1][1]
+  return decodeHtmlEntities(raw).replace(/<\/?[^>]+>/g, '').trimEnd()
+})
+
+// 运行器引言里可读的知识点关键词：取题目标签里的具体项（去掉泛化标签）。
+const runnerKeywords = computed(() => {
+  const generic = new Set(['turtle graphics 100 exercises', '少儿编程', '海龟绘图 100 题'])
+  return (post.value?.tags || []).filter((t: string) => !generic.has(t))
+})
+
 const isPostsIndex = computed(() => contentPath.value === '/posts/')
 const isCategoryIndex = computed(() => contentPath.value === '/category/')
 const isTagIndex = computed(() => contentPath.value === '/tag/')
@@ -372,6 +404,13 @@ const surroundingPosts = computed<SurroundingPost[]>(() => {
 
       <UPageBody class="docs-post-body">
         <PostContent :html="post.content" />
+
+        <TurtleRunner
+          v-if="isProblemPage && runnableCode"
+          :code="runnableCode"
+          :title="`第 ${problemNumber} 题`"
+          :keywords="runnerKeywords"
+        />
 
         <div v-if="post.tags?.length" class="post-tags">
           <UBadge
