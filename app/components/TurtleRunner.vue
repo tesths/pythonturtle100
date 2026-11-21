@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { runTurtle } from '~/utils/turtle-interpreter.js'
 
 const props = defineProps<{
@@ -25,7 +25,8 @@ const usedCommands = computed(() => {
   const found: string[] = []
   for (const key of Object.keys(map)) {
     const re = new RegExp(`\\.${key}\\s*\\(`)
-    if (re.test(src) && !found.includes(map[key])) found.push(map[key])
+    const label = map[key]
+    if (label && re.test(src) && !found.includes(label)) found.push(label)
   }
   return found
 })
@@ -47,62 +48,90 @@ const errorMessage = ref('')
 const copied = ref(false)
 const ranOnce = ref(false)
 
-type Seg = { x1: number, y1: number, x2: number, y2: number, color: string, width: number }
-type Dot = { x: number, y: number, r: number, color: string }
-type Label = { x: number, y: number, text: string, color: string, font: any }
+// One step of the drawing timeline. The interpreter drives these in order.
+type Op =
+  | { kind: 'line', x1: number, y1: number, x2: number, y2: number, color: string, width: number }
+  | { kind: 'dot', x: number, y: number, r: number, color: string }
+  | { kind: 'text', x: number, y: number, text: string, color: string }
+  | { kind: 'fill', color: string, path: number[][] }
+  | { kind: 'move', x: number, y: number, heading: number, penDown: boolean }
 
-let segments: Seg[] = []
-let dots: Dot[] = []
-let labels: Label[] = []
-let fills: { color: string, path: number[][] }[] = []
+let opLog: Op[] = []
+// Current turtle pose (live, for animation).
+let cursor = { x: 0, y: 0, heading: 0, penDown: true, visible: false }
+let speedSetting = 3
 let currentFillPath: number[][] | null = null
+let fillPoints: number[][] = []
+
+// Transform (computed once per run so the canvas never rescales mid-animation).
+let worldTransform = { scale: 1, wcx: 0, wcy: 0, cssW: 0, cssH: 0, ready: false }
+let lastCssW = 0
+let lastCssH = 0
+
+let animHandle = 0
 
 function resetBuffers() {
-  segments = []
-  dots = []
-  labels = []
-  fills = []
+  opLog = []
   currentFillPath = null
+  fillPoints = []
+  cursor = { x: 0, y: 0, heading: 0, penDown: true, visible: true }
+  worldTransform.ready = false
 }
 
-// Canvas drawing surface bridging the interpreter's vector calls.
+// Canvas drawing surface bridging the interpreter's vector calls to the timeline.
 const surface = {
   drawLine(x1: number, y1: number, x2: number, y2: number, color: string, width: number) {
-    segments.push({ x1, y1, x2, y2, color, width })
+    opLog.push({ kind: 'line', x1, y1, x2, y2, color, width })
+    if (currentFillPath) { fillPoints.push([x2, y2]) }
   },
   drawDot(x: number, y: number, r: number, color: string) {
-    dots.push({ x, y, r, color })
+    opLog.push({ kind: 'dot', x, y, r, color })
   },
   drawText(x: number, y: number, text: string, color: string) {
-    labels.push({ x, y, text, color, font: { size: 14 } })
+    opLog.push({ kind: 'text', x, y, text, color })
   },
   beginPath() {
-    currentFillPath = []
+    currentFillPath = [[cursor.x, cursor.y]]
+    fillPoints = [[cursor.x, cursor.y]]
   },
   endFill(color: string) {
-    if (currentFillPath) fills.push({ color, path: currentFillPath.slice() })
+    if (currentFillPath) opLog.push({ kind: 'fill', color, path: fillPoints.slice() })
     currentFillPath = null
+    fillPoints = []
   },
-  drawTurtle() {},
+  moveCursor(x: number, y: number, heading: number, penDown: boolean) {
+    cursor = { x, y, heading, penDown, visible: cursor.visible }
+    opLog.push({ kind: 'move', x, y, heading, penDown })
+  },
+  setSpeed(sp: number) { speedSetting = sp },
+  drawTurtle(x: number, y: number, heading: number, visible: boolean) {
+    cursor = { x, y, heading, penDown: cursor.penDown, visible }
+  },
   clear() {
     resetBuffers()
   }
 }
 
+// Bounds over the COMPLETE op log, so the transform is stable for the whole run.
 function computeBounds() {
   let minX = 0, maxX = 0, minY = 0, maxY = 0
   const consider = (x: number, y: number, pad = 0) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return
     minX = Math.min(minX, x - pad); maxX = Math.max(maxX, x + pad)
     minY = Math.min(minY, y - pad); maxY = Math.max(maxY, y + pad)
   }
-  for (const s of segments) { consider(s.x1, s.y1); consider(s.x2, s.y2) }
-  for (const d of dots) consider(d.x, d.y, d.r)
-  for (const l of labels) consider(l.x, l.y)
-  for (const f of fills) for (const [x, y] of f.path) consider(x, y)
+  for (const op of opLog) {
+    if (op.kind === 'line') { consider(op.x1, op.y1); consider(op.x2, op.y2) }
+    else if (op.kind === 'dot') consider(op.x, op.y, op.r)
+    else if (op.kind === 'text') { consider(op.x, op.y); consider(op.x + 6, op.y + 6) }
+    else if (op.kind === 'fill') for (const pt of op.path) consider(pt[0] ?? 0, pt[1] ?? 0)
+    else if (op.kind === 'move') consider(op.x, op.y, 6)
+  }
   return { minX, maxX, minY, maxY }
 }
 
-function renderCanvas() {
+// Prepare the canvas size + a fixed world->screen transform for this run.
+function prepareTransform() {
   const canvas = canvasRef.value
   if (!canvas) return
   const ctx = canvas.getContext('2d')
@@ -111,111 +140,363 @@ function renderCanvas() {
   const cssW = canvas.clientWidth || 420
   const cssH = Math.max(220, Math.min(420, Math.round(cssW * 0.72)))
   const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1
-  canvas.width = Math.round(cssW * dpr)
-  canvas.height = Math.round(cssH * dpr)
-  canvas.style.height = `${cssH}px`
+
+  // Only resize the backing store when the CSS size actually changed: setting
+  // canvas.width/height clears it and can trigger a layout flash (the "抖动").
+  if (cssW !== lastCssW || cssH !== lastCssH) {
+    canvas.width = Math.round(cssW * dpr)
+    canvas.height = Math.round(cssH * dpr)
+    canvas.style.height = `${cssH}px`
+    lastCssW = cssW
+    lastCssH = cssH
+  }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
+  const b = computeBounds()
+  const MIN_WORLD = 260
+  let spanX = Math.max(b.maxX - b.minX, MIN_WORLD)
+  let spanY = Math.max(b.maxY - b.minY, MIN_WORLD)
+  const wcx = (b.minX + b.maxX) / 2
+  const wcy = (b.minY + b.maxY) / 2
+  spanX *= 1.15
+  spanY *= 1.15
+
+  const margin = 16
+  const availW = cssW - margin * 2
+  const availH = cssH - margin * 2
+  const scale = Math.min(availW / spanX, availH / spanY)
+
+  worldTransform = { scale, wcx, wcy, cssW, cssH, ready: true }
+}
+
+const tx = (x: number) => worldTransform.cssW / 2 + (x - worldTransform.wcx) * worldTransform.scale
+const ty = (y: number) => worldTransform.cssH / 2 - (y - worldTransform.wcy) * worldTransform.scale
+
+function clearStage(ctx: CanvasRenderingContext2D) {
+  const { cssW, cssH } = worldTransform
   ctx.clearRect(0, 0, cssW, cssH)
-  // background
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, cssW, cssH)
   drawGrid(ctx, cssW, cssH)
+  drawOrigin(ctx, tx(0), ty(0))
+}
 
-  const b = computeBounds()
-  const pad = 18
-  const spanX = Math.max(1, b.maxX - b.minX)
-  const spanY = Math.max(1, b.maxY - b.minY)
-  const scale = Math.min((cssW - pad * 2) / spanX, (cssH - pad * 2) / spanY, 4)
-  // world -> screen: turtle y is up, canvas y is down. Center the drawing.
-  const cx = (b.minX + b.maxX) / 2
-  const cy = (b.minY + b.maxY) / 2
-  const tx = (x: number) => cssW / 2 + (x - cx) * scale
-  const ty = (y: number) => cssH / 2 - (y - cy) * scale
-
-  // fills first
-  for (const f of fills) {
-    if (!f.path.length) continue
+// Draw a single op onto the canvas (incremental, no full clear).
+function drawOp(ctx: CanvasRenderingContext2D, op: Op) {
+  if (op.kind === 'fill') {
+    if (!op.path.length) return
     ctx.beginPath()
-    f.path.forEach(([x, y], i) => {
-      const sx = tx(x), sy = ty(y)
-      if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy)
-    })
+    op.path.forEach((pt, i) => { const x = pt[0] ?? 0; const y = pt[1] ?? 0; if (i === 0) ctx.moveTo(tx(x), ty(y)); else ctx.lineTo(tx(x), ty(y)) })
     ctx.closePath()
-    ctx.fillStyle = f.color
-    ctx.globalAlpha = 0.85
+    ctx.fillStyle = op.color
     ctx.fill()
-    ctx.globalAlpha = 1
-  }
-
-  // lines
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
-  for (const s of segments) {
+  } else if (op.kind === 'line') {
     ctx.beginPath()
-    ctx.strokeStyle = s.color
-    ctx.lineWidth = Math.max(1, s.width * Math.min(scale, 1.6))
-    ctx.moveTo(tx(s.x1), ty(s.y1))
-    ctx.lineTo(tx(s.x2), ty(s.y2))
+    ctx.strokeStyle = op.color
+    ctx.lineWidth = Math.max(1.2, Math.min(2, op.width * 0.9))
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.moveTo(tx(op.x1), ty(op.y1))
+    ctx.lineTo(tx(op.x2), ty(op.y2))
     ctx.stroke()
-  }
-
-  for (const d of dots) {
+  } else if (op.kind === 'dot') {
     ctx.beginPath()
-    ctx.fillStyle = d.color
-    ctx.arc(tx(d.x), ty(d.y), Math.max(1.5, d.r * scale), 0, Math.PI * 2)
+    ctx.fillStyle = op.color
+    ctx.arc(tx(op.x), ty(op.y), Math.max(1.4, op.r * worldTransform.scale), 0, Math.PI * 2)
     ctx.fill()
+  } else if (op.kind === 'text') {
+    ctx.fillStyle = op.color
+    ctx.font = '13px system-ui, sans-serif'
+    ctx.textBaseline = 'bottom'
+    ctx.fillText(op.text, tx(op.x), ty(op.y))
+  }
+  // 'move' ops produce no ink; cursor is drawn on top each frame.
+}
+
+// Redraw everything up to index `count` (used for instant render / resize).
+function drawUpTo(ctx: CanvasRenderingContext2D, count: number) {
+  for (let i = 0; i < count && i < opLog.length; i += 1) { const op = opLog[i]; if (op) drawOp(ctx, op) }
+}
+
+// Find cursor pose after consuming `count` ops.
+function poseAfter(count: number) {
+  let pose = { x: 0, y: 0, heading: 0, penDown: true }
+  for (let i = 0; i < count && i < opLog.length; i += 1) {
+    const op = opLog[i]
+    if (!op) continue
+    if (op.kind === 'move') pose = { x: op.x, y: op.y, heading: op.heading, penDown: op.penDown }
+    else if (op.kind === 'line') pose = { x: op.x2, y: op.y2, heading: pose.heading, penDown: true }
+    else if (op.kind === 'dot') pose = { x: op.x, y: op.y, heading: pose.heading, penDown: true }
+  }
+  return pose
+}
+
+function renderStatic() {
+  const canvas = canvasRef.value
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  prepareTransform()
+  if (!worldTransform.ready) return
+  clearStage(ctx)
+  if (opLog.length === 0) return
+  drawUpTo(ctx, opLog.length)
+  const pose = poseAfter(opLog.length)
+  if (cursor.visible) drawTurtleCursor(ctx, tx(pose.x), ty(pose.y), pose.heading)
+}
+
+// --- Motion model: the turtle moves continuously along every segment, so we
+// animate by accumulated *travel distance* (in world units) rather than by
+// revealing whole ops. This makes long fd() runs glide and arcs sweep smoothly.
+type Motion = { op: Op, startLen: number, len: number, fromX: number, fromY: number }
+let motion: Motion[] = []
+let totalTravel = 0
+
+function buildMotion() {
+  motion = []
+  totalTravel = 0
+  let px = 0, py = 0 // previous turtle position
+  for (const op of opLog) {
+    let fromX = px, fromY = py
+    if (op.kind === 'line') {
+      const len = Math.hypot(op.x2 - op.x1, op.y2 - op.y1)
+      motion.push({ op, startLen: totalTravel, len, fromX: op.x1, fromY: op.y1 })
+      totalTravel += len
+      px = op.x2; py = op.y2
+    } else if (op.kind === 'move') {
+      const len = Math.hypot(op.x - px, op.y - py)
+      motion.push({ op, startLen: totalTravel, len, fromX: px, fromY: py })
+      if (len > 0.001) totalTravel += len
+      px = op.x; py = op.y
+    } else {
+      // dot / text / fill: instantaneous, no travel
+      motion.push({ op, startLen: totalTravel, len: 0, fromX, fromY })
+    }
+  }
+}
+
+function startAnimation() {
+  const canvas = canvasRef.value
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  if (animHandle) cancelAnimationFrame(animHandle)
+  prepareTransform()
+  if (!worldTransform.ready) return
+
+  buildMotion()
+  const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1
+  const ink = document.createElement('canvas')
+  ink.width = canvas.width
+  ink.height = canvas.height
+  const ictx = ink.getContext('2d')
+  if (!ictx) { renderStatic(); return }
+  ictx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ictx.lineCap = 'round'
+  ictx.lineJoin = 'round'
+
+  // Pacing: target a constant on-screen speed so a 140px fd feels the same as a
+  // short one. speed 0 (turtle "fastest") = instant.
+  const scale = worldTransform.scale || 1
+  const screenLen = totalTravel * scale // total px to travel
+  const speedFactor = speedSetting === 0 ? 0 : (11 - speedSetting) / 10 // 0..1
+  const pxPerSec = speedSetting === 0 ? Infinity : 380 * (0.35 + speedFactor)
+  const duration = animDurationFromScreen(screenLen, pxPerSec)
+
+  // Incremental drawing state.
+  let drawnIdx = 0          // motion entries fully painted to ink
+
+  const composite = (curX: number, curY: number, curHeading: number) => {
+    clearStage(ctx)
+    ctx.drawImage(ink, 0, 0, worldTransform.cssW, worldTransform.cssH)
+    if (cursor.visible) drawTurtleCursor(ctx, tx(curX), ty(curY), curHeading)
   }
 
-  for (const l of labels) {
-    ctx.fillStyle = l.color
-    ctx.font = '14px sans-serif'
-    ctx.fillText(l.text, tx(l.x), ty(l.y))
+  // Instant (no animation) path.
+  if (speedSetting === 0 || duration === 0) {
+    for (let i = 0; i < opLog.length; i += 1) { const op = opLog[i]; if (op) drawOp(ictx, op) }
+    const pose = poseAfter(opLog.length)
+    composite(pose.x, pose.y, pose.heading)
+    status.value = 'ok'
+    ranOnce.value = true
+    return
   }
 
-  // origin marker
+  let animStart = 0
+  const step = (ts: number) => {
+    if (!animStart) animStart = ts
+    const progress = Math.min(1, (ts - animStart) / duration)
+    const traveled = progress * totalTravel
+
+    let curX = 0, curY = 0, curHeading = 90
+    for (let i = 0; i < motion.length; i += 1) {
+      const m = motion[i]
+      if (!m) continue
+      const endLen = m.startLen + m.len
+      if (traveled >= endLen) {
+        // This entry is fully passed: paint any line once, then continue.
+        if (i >= drawnIdx) {
+          if (m.op.kind === 'line') strokePartial(ictx, m.op, 1)
+          drawnIdx = i + 1
+        }
+        if (m.op.kind === 'move') { curX = m.op.x; curY = m.op.y; curHeading = m.op.heading }
+        else if (m.op.kind === 'line') { curX = m.op.x2; curY = m.op.y2; curHeading = Math.atan2(m.op.y2 - m.op.y1, m.op.x2 - m.op.x1) * 180 / Math.PI }
+        else if (m.op.kind === 'dot') { curX = m.op.x; curY = m.op.y }
+        continue
+      }
+      // Inside this entry (0 <= frac < 1). Draw its partial stroke so the ink
+      // always reaches exactly the cursor: the line must follow the arrowhead.
+      const frac = m.len > 0.001 ? (traveled - m.startLen) / m.len : 0
+      if (m.op.kind === 'line') {
+        curX = m.fromX + (m.op.x2 - m.fromX) * frac
+        curY = m.fromY + (m.op.y2 - m.fromY) * frac
+        curHeading = Math.atan2(m.op.y2 - m.op.y1, m.op.x2 - m.op.x1) * 180 / Math.PI
+        if (frac > 0) strokePartial(ictx, m.op, frac)
+      } else if (m.op.kind === 'move') {
+        curX = m.op.x; curY = m.op.y; curHeading = m.op.heading
+      } else if (m.op.kind === 'dot') {
+        curX = m.op.x; curY = m.op.y
+      }
+      break
+    }
+
+    composite(curX, curY, curHeading)
+
+    if (progress < 1) {
+      animHandle = requestAnimationFrame(step)
+    } else {
+      // Final clean full draw.
+      for (let i = 0; i < opLog.length; i += 1) { const op = opLog[i]; if (op) drawOp(ictx, op) }
+      const pose = poseAfter(opLog.length)
+      composite(pose.x, pose.y, pose.heading)
+      status.value = 'ok'
+      ranOnce.value = true
+      animHandle = 0
+    }
+  }
+  status.value = 'running'
+  animHandle = requestAnimationFrame(step)
+}
+
+function animDurationFromScreen(screenLen: number, pxPerSec: number) {
+  const ideal = (screenLen / pxPerSec) * 1000
+  return Math.max(900, Math.min(7000, ideal))
+}
+
+// Stroke a line op from its start to `frac` (0..1) of the way.
+function strokePartial(ctx: CanvasRenderingContext2D, op: { x1: number, y1: number, x2: number, y2: number, color: string, width: number }, frac: number) {
+  const ex = op.x1 + (op.x2 - op.x1) * frac
+  const ey = op.y1 + (op.y2 - op.y1) * frac
   ctx.beginPath()
-  ctx.fillStyle = 'rgba(99,102,241,0.9)'
-  ctx.arc(tx(0), ty(0), 3, 0, Math.PI * 2)
+  ctx.strokeStyle = op.color
+  ctx.lineWidth = Math.max(1.2, Math.min(2, op.width * 0.9))
+  ctx.moveTo(tx(op.x1), ty(op.y1))
+  ctx.lineTo(tx(ex), ty(ey))
+  ctx.stroke()
+}
+
+function drawOrigin(ctx: CanvasRenderingContext2D, sx: number, sy: number) {
+  ctx.save()
+  ctx.beginPath()
+  ctx.arc(sx, sy, 3, 0, Math.PI * 2)
+  ctx.fillStyle = '#ffffff'
   ctx.fill()
+  ctx.lineWidth = 1.2
+  ctx.strokeStyle = '#111827'
+  ctx.stroke()
+  ctx.restore()
+}
+
+function drawTurtleCursor(ctx: CanvasRenderingContext2D, sx: number, sy: number, heading: number) {
+  ctx.save()
+  ctx.translate(sx, sy)
+  // screen heading: turtle 0deg = +x (east); canvas y is flipped
+  ctx.rotate((-heading * Math.PI) / 180)
+  // Tip sits exactly at the cursor point (the pen tip), body trails behind, so
+  // the freshly drawn line always meets the arrowhead with no visible gap.
+  ctx.beginPath()
+  ctx.moveTo(0, 0)
+  ctx.lineTo(-11, 5.5)
+  ctx.lineTo(-11, -5.5)
+  ctx.closePath()
+  ctx.fillStyle = '#111827'
+  ctx.fill()
+  ctx.restore()
 }
 
 function drawGrid(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const scale = worldTransform.scale
   ctx.save()
   ctx.strokeStyle = '#eef2f7'
   ctx.lineWidth = 1
-  const step = 28
-  for (let x = 0; x <= w; x += step) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke() }
-  for (let y = 0; y <= h; y += step) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke() }
+  // world-unit grid spacing chosen so lines land ~30px apart
+  const worldStepRaw = 30 / Math.max(scale, 0.0001)
+  const pow = Math.pow(10, Math.floor(Math.log10(worldStepRaw)))
+  const candidates = [1, 2, 5, 10].map((m) => m * pow)
+  const worldStep: number = candidates.find((c) => c * scale >= 22) ?? candidates[candidates.length - 1] ?? 1
+  const stepPx = worldStep * scale
+  if (stepPx > 4) {
+    let guard = 0
+    for (let x = Math.floor((0 - tx(0)) / stepPx) * worldStep; guard < 400; x += worldStep, guard += 1) {
+      const px = tx(x)
+      if (px > w + 1) break
+      if (px >= -1) { ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke() }
+    }
+    guard = 0
+    for (let y = Math.floor((ty(0) - h) / stepPx) * worldStep; guard < 400; y += worldStep, guard += 1) {
+      const py = ty(y)
+      if (py < -1) break
+      if (py <= h + 1) { ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(w, py); ctx.stroke() }
+    }
+  }
   ctx.restore()
 }
 
 function run() {
   status.value = 'running'
   errorMessage.value = ''
+  if (animHandle) { cancelAnimationFrame(animHandle); animHandle = 0 }
   resetBuffers()
-  // let the UI paint the running state first
-  requestAnimationFrame(() => {
-    try {
-      runTurtle(editorCode.value, { surface })
-      status.value = 'ok'
-      ranOnce.value = true
-      renderCanvas()
-    } catch (e: any) {
-      status.value = 'error'
-      errorMessage.value = e && e.message ? e.message : String(e)
-      // still draw whatever was produced before the error
-      renderCanvas()
-    }
-  })
+  // Execute the whole program first (records the ordered op timeline), then
+  // animate the replay. Running the interpreter is synchronous and cheap.
+  try {
+    runTurtle(editorCode.value, { surface })
+    // Begin animation on the next frame so the running state paints first.
+    requestAnimationFrame(() => startAnimation())
+  } catch (e: any) {
+    status.value = 'error'
+    errorMessage.value = e && e.message ? e.message : String(e)
+    // Still show whatever was drawn before the error, without animation.
+    requestAnimationFrame(() => renderStatic())
+  }
+}
+
+// Execute the program WITHOUT animating, just so we can compute the final
+// transform and paint the grid at that exact transform. This prevents the grid
+// (and the drawing) from shifting when the animation begins.
+function prewarmAndPaintGrid() {
+  resetBuffers()
+  try {
+    runTurtle(editorCode.value, { surface })
+  } catch (_) {
+    // ignore: run() will report the error properly
+  }
+  // Compute the same transform startAnimation will use, then paint grid only.
+  const canvas = canvasRef.value
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  prepareTransform()
+  if (worldTransform.ready) clearStage(ctx)
 }
 
 function resetToOriginal() {
+  if (animHandle) { cancelAnimationFrame(animHandle); animHandle = 0 }
   editorCode.value = props.code || ''
   errorMessage.value = ''
   status.value = 'idle'
   resetBuffers()
-  renderCanvas()
+  prewarmAndPaintGrid()
 }
 
 async function copyCode() {
@@ -229,14 +510,25 @@ async function copyCode() {
 let resizeTimer: any = null
 function onResize() {
   if (resizeTimer) window.clearTimeout(resizeTimer)
-  resizeTimer = window.setTimeout(() => renderCanvas(), 120)
+  resizeTimer = window.setTimeout(() => {
+    // Cancel any running animation and repaint instantly at the new size.
+    if (animHandle) { cancelAnimationFrame(animHandle); animHandle = 0 }
+    renderStatic()
+  }, 120)
 }
 
 onMounted(() => {
-  renderCanvas()
+  // Run the program to learn the final transform, then paint ONLY the grid at
+  // that transform. The drawing then animates on top; nothing shifts.
+  prewarmAndPaintGrid()
   window.addEventListener('resize', onResize)
-  // Auto-run the reference solution once so visitors immediately see a result.
-  window.setTimeout(() => run(), 220)
+  // Auto-run the reference solution so visitors immediately see it drawn.
+  window.setTimeout(() => run(), 300)
+})
+
+onBeforeUnmount(() => {
+  if (animHandle) cancelAnimationFrame(animHandle)
+  window.removeEventListener('resize', onResize)
 })
 
 const hasCode = computed(() => Boolean(props.code && props.code.trim()))
@@ -277,7 +569,7 @@ const hasCode = computed(() => Boolean(props.code && props.code.trim()))
         <div v-if="status === 'error'" class="turtle-runner__error">
           {{ errorMessage }}
         </div>
-        <div v-else-if="!ranOnce" class="turtle-runner__hint">
+        <div v-else-if="!ranOnce && status !== 'running'" class="turtle-runner__hint">
           点「▶ 运行」查看绘制结果
         </div>
       </div>

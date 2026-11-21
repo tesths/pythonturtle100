@@ -264,6 +264,7 @@ class Parser {
     if (this.isKw('continue')) { this.next(); return { type: 'continue' } }
     if (this.isKw('pass')) { this.next(); return { type: 'pass' } }
     if (this.isKw('import')) { return this.parseImport() }
+    if (this.isKw('from')) { return this.parseFromImport() }
     if (this.isKw('global')) { this.next(); if (!this.atEnd()) this.next(); return { type: 'pass' } }
     return this.parseExpressionStatement()
   }
@@ -287,6 +288,39 @@ class Parser {
       break
     }
     return { type: 'import', aliases }
+  }
+
+  // from <module> import * | name [as alias], name, ...
+  parseFromImport() {
+    this.next() // 'from'
+    const mod = this.peek()
+    if (!mod || mod.type !== 'name') this.error('from 后应为模块名')
+    const module = mod.value
+    this.next()
+    if (!this.isKw('import')) this.error('from ... 应为 import')
+    this.next() // 'import'
+    // star import
+    if (this.isOp('*')) {
+      this.next()
+      return { type: 'from_import', module, names: [], star: true }
+    }
+    const names = []
+    while (true) {
+      const n = this.peek()
+      if (!n || n.type !== 'name') this.error('import 后应为名称')
+      let asName = n.value
+      this.next()
+      if (this.isKw('as')) {
+        this.next()
+        const alias = this.next()
+        if (!alias || alias.type !== 'name') this.error('as 后应为名称')
+        asName = alias.value
+      }
+      names.push({ name: n.value, as: asName })
+      if (this.isOp(',')) { this.next(); continue }
+      break
+    }
+    return { type: 'from_import', module, names, star: false }
   }
 
   // Compounds: header sits at this.li; body starts at this.li + 1.
@@ -618,14 +652,15 @@ export function createInterpreter(options = {}) {
   const maxLoop = options.maxLoop || 100000
 
   const state = {
-    x: 0, y: 0, heading: 90, // turtle starts facing up (east=0, up=90)
+    x: 0, y: 0, heading: 0, // CPython turtle default: starts facing east (heading 0)
     penDown: true,
     penColor: '#1f2937',
     penWidth: 1,
     fillColor: '#1f2937',
     filling: false,
     fillPath: [],
-    visible: true
+    visible: true,
+    speed: 3
   }
 
   let steps = 0
@@ -648,6 +683,17 @@ export function createInterpreter(options = {}) {
     state.x = nx
     state.y = ny
     if (state.filling) state.fillPath.push([nx, ny])
+    // Notify the host of the turtle's new pose so it can animate the cursor,
+    // even for pen-up moves (which produce no ink but still move the turtle).
+    if (surface && typeof surface.moveCursor === 'function') {
+      surface.moveCursor(state.x, state.y, state.heading, state.penDown)
+    }
+  }
+  function turnTo(newHeading) {
+    state.heading = newHeading
+    if (surface && typeof surface.moveCursor === 'function') {
+      surface.moveCursor(state.x, state.y, state.heading, state.penDown)
+    }
   }
 
   const api = {
@@ -656,30 +702,46 @@ export function createInterpreter(options = {}) {
       moveTo(state.x + Math.cos(rad) * d, state.y + Math.sin(rad) * d, true)
       throttleUpdate()
     },
+    forward(d = 0) { api.fd(d) },
     bk(d = 0) { api.fd(-d) },
-    rt(a = 0) { state.heading -= a; throttleUpdate() },
-    lt(a = 0) { state.heading += a; throttleUpdate() },
+    back(d = 0) { api.fd(-d) },
+    backward(d = 0) { api.fd(-d) },
+    rt(a = 0) { turnTo(state.heading - a); throttleUpdate() },
+    right(a = 0) { api.rt(a) },
+    lt(a = 0) { turnTo(state.heading + a); throttleUpdate() },
+    left(a = 0) { api.lt(a) },
 
     circle(radius = 0, extent = null, stepsArg = null) {
       const r = Number(radius)
+      if (!r) return // radius 0: nothing to draw
       const ext = extent === null || extent === undefined ? 360 : Number(extent)
-      const stepsN = stepsArg ? Math.max(3, Math.floor(stepsArg)) : Math.max(12, Math.floor(Math.abs(ext) / 4))
-      // Approximate: sample along the arc using tangent motion.
-      const segs = stepsN
-      const sign = r >= 0 ? 1 : -1
-      // For positive radius, turtle turns left (counterclockwise) around center to its left.
-      // The turtle's position follows the circle; use chord steps.
-      const diameter = Math.abs(r) * 2
-      const stepAngle = ext / segs
-      // distance per step (chord)
-      for (let i = 0; i < segs; i += 1) {
-        const chord = 2 * Math.abs(r) * Math.sin(Math.abs(toRadians(stepAngle)) / 2)
-        const rad = toRadians(state.heading)
-        const nx = state.x + Math.cos(rad) * chord
-        const ny = state.y + Math.sin(rad) * chord
-        moveTo(nx, ny, true)
-        // turn by stepAngle; positive radius => turn left => heading += stepAngle
-        state.heading += sign * stepAngle
+      // Match CPython turtle.circle(): steps = 1 + int(min(11 + |r|/6, 59) * frac)
+      const frac = Math.abs(ext) / 360
+      const stepsN = stepsArg
+        ? Math.max(1, Math.floor(stepsArg))
+        : 1 + Math.floor(Math.min(11 + Math.abs(r) / 6, 59) * frac)
+      // CPython turtle semantics:
+      //  - For positive radius the circle's centre is 90 deg to the LEFT of the
+      //    current heading; negative radius puts it to the right.
+      //  - The turtle follows the arc, so after a full turn it is back at the
+      //    start point having rotated by `extent` degrees (sign follows radius).
+      //  - The centre stays fixed; we sample points on the arc and connect them.
+      const cx = state.x + Math.cos(toRadians(state.heading + (r > 0 ? 90 : -90))) * Math.abs(r)
+      const cy = state.y + Math.sin(toRadians(state.heading + (r > 0 ? 90 : -90))) * Math.abs(r)
+      const startAngle = toRadians(state.heading + (r > 0 ? -90 : 90)) // angle from centre to start point
+      const dir = (r > 0 ? 1 : -1) * (ext >= 0 ? 1 : -1) // sweep direction of the turtle
+      const sweep = toRadians(Math.abs(ext)) * dir
+      // Move to the exact start point on the circle first (no-op if already on it).
+      state.x = cx + Math.abs(r) * Math.cos(startAngle)
+      state.y = cy + Math.abs(r) * Math.sin(startAngle)
+      if (state.filling) state.fillPath = state.fillPath || []
+      for (let i = 1; i <= stepsN; i += 1) {
+        const a = startAngle + (sweep * i) / stepsN
+        moveTo(cx + Math.abs(r) * Math.cos(a), cy + Math.abs(r) * Math.sin(a), true)
+      }
+      state.heading += (r > 0 ? 1 : -1) * ext
+      if (surface && typeof surface.moveCursor === 'function') {
+        surface.moveCursor(state.x, state.y, state.heading, state.penDown)
       }
       throttleUpdate()
     },
@@ -690,13 +752,14 @@ export function createInterpreter(options = {}) {
     teleport(x, y) {
       if (state.penDown && surface) surface.drawLine(state.x, state.y, Number(x), Number(y), state.penColor, state.penWidth)
       state.x = Number(x); state.y = Number(y)
+      if (surface && typeof surface.moveCursor === 'function') surface.moveCursor(state.x, state.y, state.heading, state.penDown)
     },
     setx(x) { api.goto(Number(x), state.y) },
     sety(y) { api.goto(state.x, Number(y)) },
-    seth(a) { state.heading = Number(a); throttleUpdate() },
+    seth(a) { turnTo(Number(a)); throttleUpdate() },
     setheading(a) { api.seth(a) },
     heading() { return normalizeHeading(state.heading) },
-    home() { api.goto(0, 0); state.heading = 90; throttleUpdate() },
+    home() { api.goto(0, 0); turnTo(0); throttleUpdate() },
     towards(x, y) {
       return (Math.atan2(Number(y) - state.y, Number(x) - state.x) * 180) / Math.PI
     },
@@ -708,7 +771,10 @@ export function createInterpreter(options = {}) {
     pu() { state.penDown = false }, penup() { state.penDown = false }, up() { state.penDown = false },
     pd() { state.penDown = true }, pendown() { state.penDown = true }, down() { state.penDown = true },
     isdown() { return state.penDown },
-    pensize(w) { state.penWidth = Math.max(0.5, Number(w)); return state.penWidth },
+    pensize(w) {
+      if (w === undefined || w === null) return state.penWidth
+      state.penWidth = Math.max(0.5, Number(w)); return state.penWidth
+    },
     width(w) { return api.pensize(w) },
     pencolor(...args) { state.penColor = normalizeColor(args, state.penColor); return state.penColor },
     fillcolor(...args) { state.fillColor = normalizeColor(args, state.fillColor); return state.fillColor },
@@ -738,14 +804,25 @@ export function createInterpreter(options = {}) {
     ht() { state.visible = false }, hideturtle() { state.visible = false },
     st() { state.visible = true }, showturtle() { state.visible = true },
     isvisible() { return state.visible },
-    speed() {},
+    speed(speedArg) {
+      if (speedArg === undefined || speedArg === null) return state.speed
+      const NAMED = { fastest: 0, fast: 10, normal: 6, slow: 3, slowest: 1 }
+      let sp = speedArg
+      if (typeof sp === 'string') sp = NAMED[sp.toLowerCase()] ?? 6
+      sp = Number(sp)
+      if (sp > 0.5 && sp < 10.5) sp = Math.round(sp)
+      else sp = 0
+      state.speed = sp
+      if (surface && typeof surface.setSpeed === 'function') surface.setSpeed(sp)
+      return sp
+    },
     degrees() {}, radians() {},
     undo() {},
     done() {}, mainloop() {},
     clear() { if (surface) surface.clear() },
     reset() {
       if (surface) surface.clear()
-      state.x = 0; state.y = 0; state.heading = 90; state.penDown = true
+      state.x = 0; state.y = 0; state.heading = 0; state.penDown = true
     },
     pen(...args) {
       if (args.length) { state.penDown = Boolean(args[0]) }
@@ -840,12 +917,15 @@ export function runTurtle(source, options = {}) {
       }
       case 'assign': {
         const value = evalExpr(stmt.value, env)
+        // Python semantics: assignment rebinds the variable in the enclosing
+        // scope, not the throwaway child Env created for an if/for/while body.
+        // So a loop that does `s = s + 10` must update the outer `s`.
         if (stmt.op === '=') {
-          env.set(stmt.name, value)
+          env.assign(stmt.name, value)
         } else {
           const cur = env.get(stmt.name)
           const op = stmt.op.slice(0, -1)
-          env.set(stmt.name, applyBinary(op, cur, value))
+          env.assign(stmt.name, applyBinary(op, cur, value))
         }
         return
       }
@@ -856,6 +936,30 @@ export function runTurtle(source, options = {}) {
           } else {
             // unknown module: give a permissive namespace
             env.set(as, makePermissiveModule())
+          }
+        }
+        return
+      }
+      case 'from_import': {
+        const isTurtle = ['turtle', 'turtledemo'].includes(stmt.module)
+        if (isTurtle) {
+          if (stmt.star) {
+            // Bind every turtle command as a bare name (from turtle import *).
+            for (const name of Object.keys(turtleNs)) {
+              if (name === '__isTurtleWrapper') continue
+              env.set(name, turtleNs[name])
+            }
+          } else {
+            for (const { name, as } of stmt.names) {
+              env.set(as, turtleNs[name])
+            }
+          }
+        } else {
+          const mod = makePermissiveModule()
+          if (stmt.star) {
+            // nothing meaningful to bind from an unknown module
+          } else {
+            for (const { name, as } of stmt.names) env.set(as, mod[name])
           }
         }
         return
