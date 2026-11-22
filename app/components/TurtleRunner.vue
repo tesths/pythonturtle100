@@ -49,12 +49,13 @@ const copied = ref(false)
 const ranOnce = ref(false)
 
 // One step of the drawing timeline. The interpreter drives these in order.
+type Seg = { x1: number, y1: number, x2: number, y2: number, color: string, width: number }
 type Op =
-  | { kind: 'line', x1: number, y1: number, x2: number, y2: number, color: string, width: number }
+  | { kind: 'line', x1: number, y1: number, x2: number, y2: number, color: string, width: number, animSpeed?: number }
   | { kind: 'dot', x: number, y: number, r: number, color: string }
   | { kind: 'text', x: number, y: number, text: string, color: string }
   | { kind: 'fill', color: string, path: number[][] }
-  | { kind: 'move', x: number, y: number, heading: number, penDown: boolean }
+  | { kind: 'move', x: number, y: number, heading: number, penDown: boolean, animSpeed?: number }
 
 let opLog: Op[] = []
 // Current turtle pose (live, for animation).
@@ -80,8 +81,8 @@ function resetBuffers() {
 
 // Canvas drawing surface bridging the interpreter's vector calls to the timeline.
 const surface = {
-  drawLine(x1: number, y1: number, x2: number, y2: number, color: string, width: number) {
-    opLog.push({ kind: 'line', x1, y1, x2, y2, color, width })
+  drawLine(x1: number, y1: number, x2: number, y2: number, color: string, width: number, animSpeed?: number) {
+    opLog.push({ kind: 'line', x1, y1, x2, y2, color, width, animSpeed: animSpeed === undefined ? speedSetting : animSpeed })
     if (currentFillPath) { fillPoints.push([x2, y2]) }
   },
   drawDot(x: number, y: number, r: number, color: string) {
@@ -99,9 +100,9 @@ const surface = {
     currentFillPath = null
     fillPoints = []
   },
-  moveCursor(x: number, y: number, heading: number, penDown: boolean) {
+  moveCursor(x: number, y: number, heading: number, penDown: boolean, animSpeed?: number) {
     cursor = { x, y, heading, penDown, visible: cursor.visible }
-    opLog.push({ kind: 'move', x, y, heading, penDown })
+    opLog.push({ kind: 'move', x, y, heading, penDown, animSpeed: animSpeed === undefined ? speedSetting : animSpeed })
   },
   setSpeed(sp: number) { speedSetting = sp },
   drawTurtle(x: number, y: number, heading: number, visible: boolean) {
@@ -245,32 +246,96 @@ function renderStatic() {
   if (cursor.visible) drawTurtleCursor(ctx, tx(pose.x), ty(pose.y), pose.heading)
 }
 
-// --- Motion model: the turtle moves continuously along every segment, so we
-// animate by accumulated *travel distance* (in world units) rather than by
-// revealing whole ops. This makes long fd() runs glide and arcs sweep smoothly.
-type Motion = { op: Op, startLen: number, len: number, fromX: number, fromY: number }
-let motion: Motion[] = []
-let totalTravel = 0
+// --- Animation model: matches CPython turtle.py's hop-based animation. ---
+// CPython splits each primitive into `nhops` frames and waits the SAME delay
+// between frames, so every command animates at a constant rate:
+//   - move of screen distance d:  nhops_move = 1 + int(d / (3 * 1.1^s * s))
+//   - rotate of angle a (deg):    nhops_rot  = 1 + int(|a| / (3 * s))
+// We build a flat timeline of frames (one per hop). Each frame advances either a
+// small distance along the current segment or a small angle of the current turn
+// (or nothing, for dot/text/fill which are instantaneous). One frame == one unit
+// of time, giving uniform speed for all commands.
+type Frame =
+  | { kind: 'stroke', op: Seg, fromX: number, fromY: number, toFrac: number, heading: number } // drawn segment, partial ink
+  | { kind: 'rot', x: number, y: number, heading: number }      // pure rotation pose
+  | { kind: 'jump', x: number, y: number, heading: number }     // pen-up move pose
+  | { kind: 'instant', op: Op }                                 // dot/text/fill (drawn at once)
 
-function buildMotion() {
-  motion = []
-  totalTravel = 0
-  let px = 0, py = 0 // previous turtle position
+let frames: Frame[] = []
+
+// Faithful transcription of CPython turtle.py's animation model.
+//
+// In CPython (RawTurtle._goto / _rotate) each primitive is split into `nhops`
+// steps, and EVERY step calls screen._delay(screen._delayvalue) with the SAME
+// fixed delay (default 10 ms). So speed does not change the frame delay; it
+// changes the number/size of hops:
+//   move:    nhops = 1 + int( sqrt((dx*xscale)^2+(dy*yscale)^2) / (3*1.1^s*s) )
+//   rotate:  steps = 1 + int( |angle| / (3*s) );   s == 0  => instant (no steps)
+// In standard mode xscale == yscale == 1.0, so we use WORLD units here (the
+// canvas fit-scale is a pure rendering concern and must NOT leak into timing).
+// The per-op speed comes from the interpreter (circle's internal rotations use
+// speed 0 => instant, exactly like CPython's speed(0) around _rotate()).
+function buildFrames(defaultSpeed: number) {
+  frames = []
+  const clampSpeed = (v: number | undefined) => {
+    const n = v === undefined || v === null ? defaultSpeed : v
+    if (!(0.5 < n && n < 10.5)) return 0 // CPython: <0.5 or >10.5 => 0 (jump)
+    return Math.round(n)
+  }
+  const XSCALE = 1, YSCALE = 1 // standard mode
+
+  let px = 0, py = 0, heading = 0
+
+  const pushRot = (targetHeading: number, sp: number) => {
+    const delta = targetHeading - heading
+    if (Math.abs(delta) < 1e-9) return
+    if (sp <= 0) { heading = targetHeading; return } // speed 0 => turn instantly
+    const steps = 1 + Math.floor(Math.abs(delta) / (3 * sp))
+    const inc = delta / steps
+    for (let i = 1; i <= steps; i += 1) {
+      frames.push({ kind: 'rot', x: px, y: py, heading: heading + inc * i })
+    }
+    heading = targetHeading
+  }
+
+  // Emit motion frames for a translation from (px,py) to (tx2,ty2).
+  //   strokeOp given  -> drawn segment: emit `stroke` frames that lay ink.
+  //   strokeOp absent -> pen-up jump: emit `jump` frames that only move the cursor.
+  const pushMove = (tx2: number, ty2: number, sp: number, trackHeading: boolean, strokeOp?: Seg) => {
+    const dx = tx2 - px, dy = ty2 - py
+    const distSq = (dx * XSCALE) ** 2 + (dy * YSCALE) ** 2
+    const dist = Math.sqrt(distSq)
+    if (dist < 1e-9) return
+    const nhops = sp <= 0 ? 1 : 1 + Math.floor(dist / (3 * Math.pow(1.1, sp) * sp))
+    const startX = px, startY = py
+    const h = Math.atan2(dy, dx) * 180 / Math.PI
+    for (let n = 1; n <= nhops; n += 1) {
+      const f = n / nhops
+      if (strokeOp) {
+        frames.push({ kind: 'stroke', op: strokeOp, fromX: startX, fromY: startY, toFrac: f, heading: h })
+      } else {
+        frames.push({ kind: 'jump', x: startX + dx * f, y: startY + dy * f, heading: h })
+      }
+    }
+    px = tx2; py = ty2
+    if (trackHeading) heading = h // pen-up jump follows travel dir; drawn line does not
+  }
+
   for (const op of opLog) {
-    let fromX = px, fromY = py
     if (op.kind === 'line') {
-      const len = Math.hypot(op.x2 - op.x1, op.y2 - op.y1)
-      motion.push({ op, startLen: totalTravel, len, fromX: op.x1, fromY: op.y1 })
-      totalTravel += len
-      px = op.x2; py = op.y2
+      // A drawn segment is pure translation (_go): animate it, no rotation.
+      // The turtle's heading is owned by the adjacent `move` op, so don't touch it.
+      pushMove(op.x2, op.y2, clampSpeed(op.animSpeed), false, op)
     } else if (op.kind === 'move') {
-      const len = Math.hypot(op.x - px, op.y - py)
-      motion.push({ op, startLen: totalTravel, len, fromX: px, fromY: py })
-      if (len > 0.001) totalTravel += len
-      px = op.x; py = op.y
+      const sp = clampSpeed(op.animSpeed)
+      // Pen-up / jump translation along the straight path.
+      const dist = Math.hypot(op.x - px, op.y - py)
+      if (dist > 1e-6) pushMove(op.x, op.y, sp, true)
+      // Heading change (rotation) at this op's speed.
+      pushRot(op.heading, sp)
     } else {
-      // dot / text / fill: instantaneous, no travel
-      motion.push({ op, startLen: totalTravel, len: 0, fromX, fromY })
+      // dot / text / fill: instantaneous
+      frames.push({ kind: 'instant', op })
     }
   }
 }
@@ -284,7 +349,6 @@ function startAnimation() {
   prepareTransform()
   if (!worldTransform.ready) return
 
-  buildMotion()
   const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1
   const ink = document.createElement('canvas')
   ink.width = canvas.width
@@ -295,16 +359,33 @@ function startAnimation() {
   ictx.lineCap = 'round'
   ictx.lineJoin = 'round'
 
-  // Pacing: target a constant on-screen speed so a 140px fd feels the same as a
-  // short one. speed 0 (turtle "fastest") = instant.
-  const scale = worldTransform.scale || 1
-  const screenLen = totalTravel * scale // total px to travel
-  const speedFactor = speedSetting === 0 ? 0 : (11 - speedSetting) / 10 // 0..1
-  const pxPerSec = speedSetting === 0 ? Infinity : 380 * (0.35 + speedFactor)
-  const duration = animDurationFromScreen(screenLen, pxPerSec)
+  // speed 0 ("fastest") => no animation, draw instantly (CPython: jumps).
+  if (speedSetting === 0) {
+    for (let i = 0; i < opLog.length; i += 1) { const op = opLog[i]; if (op) drawOp(ictx, op) }
+    const pose = poseAfter(opLog.length)
+    clearStage(ctx)
+    ctx.drawImage(ink, 0, 0, worldTransform.cssW, worldTransform.cssH)
+    if (cursor.visible) drawTurtleCursor(ctx, tx(pose.x), ty(pose.y), pose.heading)
+    status.value = 'ok'
+    ranOnce.value = true
+    return
+  }
 
-  // Incremental drawing state.
-  let drawnIdx = 0          // motion entries fully painted to ink
+  buildFrames(speedSetting)
+  // @ts-ignore debug hook (removed after measurement)
+  // @ts-ignore debug hook (removed after measurement)
+  if (typeof window !== 'undefined') (window as any).__ttFrames = { frames, scale: worldTransform.scale }
+
+  // CPython's animation uses a FIXED delay between every hop
+  // (screen._delayvalue, default 10 ms). Speed changes the *number of hops*, not
+  // the delay. We honour that: one frame == one hop == DELAY_MS of wall time.
+  // (We use requestAnimationFrame's elapsed-time accounting to keep the cadence,
+  // and only coalesce hops if the tab is throttled, never changing relative speed.)
+  const DELAY_MS = 10 // CPython _CFG["delay"]: fixed wall-clock delay per hop
+
+  let frameIdx = 0
+  let acc = 0
+  let lastTs = 0
 
   const composite = (curX: number, curY: number, curHeading: number) => {
     clearStage(ctx)
@@ -312,75 +393,53 @@ function startAnimation() {
     if (cursor.visible) drawTurtleCursor(ctx, tx(curX), ty(curY), curHeading)
   }
 
-  // Instant (no animation) path.
-  if (speedSetting === 0 || duration === 0) {
-    for (let i = 0; i < opLog.length; i += 1) { const op = opLog[i]; if (op) drawOp(ictx, op) }
-    const pose = poseAfter(opLog.length)
-    composite(pose.x, pose.y, pose.heading)
-    status.value = 'ok'
-    ranOnce.value = true
-    return
+  const applyFrame = (fr: Frame) => {
+    if (fr.kind === 'stroke') {
+      strokePartial(ictx, fr.op, fr.toFrac)
+      return { x: fr.fromX + (fr.op.x2 - fr.fromX) * fr.toFrac, y: fr.fromY + (fr.op.y2 - fr.fromY) * fr.toFrac, heading: fr.heading }
+    }
+    if (fr.kind === 'instant') { drawOp(ictx, fr.op); return null }
+    return { x: fr.x, y: fr.y, heading: fr.heading }
   }
 
-  let animStart = 0
+  let pose = { x: 0, y: 0, heading: 0 }
   const step = (ts: number) => {
-    if (!animStart) animStart = ts
-    const progress = Math.min(1, (ts - animStart) / duration)
-    const traveled = progress * totalTravel
-
-    let curX = 0, curY = 0, curHeading = 90
-    for (let i = 0; i < motion.length; i += 1) {
-      const m = motion[i]
-      if (!m) continue
-      const endLen = m.startLen + m.len
-      if (traveled >= endLen) {
-        // This entry is fully passed: paint any line once, then continue.
-        if (i >= drawnIdx) {
-          if (m.op.kind === 'line') strokePartial(ictx, m.op, 1)
-          drawnIdx = i + 1
-        }
-        if (m.op.kind === 'move') { curX = m.op.x; curY = m.op.y; curHeading = m.op.heading }
-        else if (m.op.kind === 'line') { curX = m.op.x2; curY = m.op.y2; curHeading = Math.atan2(m.op.y2 - m.op.y1, m.op.x2 - m.op.x1) * 180 / Math.PI }
-        else if (m.op.kind === 'dot') { curX = m.op.x; curY = m.op.y }
-        continue
-      }
-      // Inside this entry (0 <= frac < 1). Draw its partial stroke so the ink
-      // always reaches exactly the cursor: the line must follow the arrowhead.
-      const frac = m.len > 0.001 ? (traveled - m.startLen) / m.len : 0
-      if (m.op.kind === 'line') {
-        curX = m.fromX + (m.op.x2 - m.fromX) * frac
-        curY = m.fromY + (m.op.y2 - m.fromY) * frac
-        curHeading = Math.atan2(m.op.y2 - m.op.y1, m.op.x2 - m.op.x1) * 180 / Math.PI
-        if (frac > 0) strokePartial(ictx, m.op, frac)
-      } else if (m.op.kind === 'move') {
-        curX = m.op.x; curY = m.op.y; curHeading = m.op.heading
-      } else if (m.op.kind === 'dot') {
-        curX = m.op.x; curY = m.op.y
-      }
-      break
+    if (!lastTs) lastTs = ts
+    acc += ts - lastTs
+    lastTs = ts
+    // Consume one hop per DELAY_MS of elapsed wall time (CPython cadence).
+    // Clamp catch-up so a stalled/throttled tab can't fast-forward the whole
+    // animation in one giant frame; relative speed is still preserved.
+    let budget = Math.floor(acc / DELAY_MS)
+    if (budget > 8) budget = 8
+    acc -= budget * DELAY_MS
+    if (acc < 0) acc = 0
+    if (budget < 1) budget = 1 // always progress at least one hop per tick
+    while (budget > 0 && frameIdx < frames.length) {
+      const fr = frames[frameIdx]
+      frameIdx += 1
+      budget -= 1
+      if (fr) { const p = applyFrame(fr); if (p) pose = p }
     }
-
-    composite(curX, curY, curHeading)
-
-    if (progress < 1) {
-      animHandle = requestAnimationFrame(step)
-    } else {
-      // Final clean full draw.
+    if (frameIdx >= frames.length) {
+      // Final clean draw (#3 ensures exact geometry with full-precision ops).
       for (let i = 0; i < opLog.length; i += 1) { const op = opLog[i]; if (op) drawOp(ictx, op) }
-      const pose = poseAfter(opLog.length)
-      composite(pose.x, pose.y, pose.heading)
+      const fin = poseAfter(opLog.length)
+      composite(fin.x, fin.y, fin.heading)
       status.value = 'ok'
       ranOnce.value = true
       animHandle = 0
+      // @ts-ignore debug
+      if (typeof window !== 'undefined') (window as any).__ttInfo = { hops: frames.length, startMs: (window as any).__ttStartMs || 0, endMs: performance.now() }
+      return
     }
+    composite(pose.x, pose.y, pose.heading)
+    animHandle = requestAnimationFrame(step)
   }
   status.value = 'running'
+  // @ts-ignore debug
+  if (typeof window !== 'undefined') (window as any).__ttStartMs = performance.now()
   animHandle = requestAnimationFrame(step)
-}
-
-function animDurationFromScreen(screenLen: number, pxPerSec: number) {
-  const ideal = (screenLen / pxPerSec) * 1000
-  return Math.max(900, Math.min(7000, ideal))
 }
 
 // Stroke a line op from its start to `frac` (0..1) of the way.
@@ -455,6 +514,8 @@ function drawGrid(ctx: CanvasRenderingContext2D, w: number, h: number) {
 function run() {
   status.value = 'running'
   errorMessage.value = ''
+  // @ts-ignore debug
+  if (typeof window !== 'undefined') { (window as any).__ttInfo = null; (window as any).__ttFrames = null }
   if (animHandle) { cancelAnimationFrame(animHandle); animHandle = 0 }
   resetBuffers()
   // Execute the whole program first (records the ordered op timeline), then
