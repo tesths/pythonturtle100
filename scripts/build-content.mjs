@@ -326,6 +326,9 @@ for (const file of postFiles) {
     categories,
     tags,
     thumbnail: resolveThumbnail(data, renderedBody),
+    // 专题页等非题目页可选：在 frontmatter 里用 runnerCode 提供一段完整可运行的 turtle 代码，
+    // 用于在这些高意图落地页展示「在线运行」模块（题目页则从正文最后一个代码块自动取）。
+    runnerCode: typeof data.runnerCode === 'string' ? data.runnerCode : '',
     content,
     toc,
     summary: data.description || data.summary || makeSummary(renderedBody)

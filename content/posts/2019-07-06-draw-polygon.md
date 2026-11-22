@@ -1,7 +1,15 @@
 ---
 title: "Python 海龟绘图——正多边形绘制总结"
 date: "2019-07-06T06:30:12-08:00"
-lastmod: "2021-10-05T03:39:12-08:00"
+lastmod: "2026-11-22T10:00:00-08:00"
+runnerCode: |
+  import turtle as t
+
+  # 改一改边数 n，就能画出不同的正多边形
+  n = 6
+  for i in range(n):
+      t.fd(80)
+      t.rt(360 / n)
 slug: "draw-polygon"
 url: "/draw-polygon/"
 author: "judi0713@sina.com"

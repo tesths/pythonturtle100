@@ -1,7 +1,15 @@
 ---
 title: "Python 海龟绘图详解——多角星绘制总结"
 date: "2019-10-20T17:58:03-08:00"
-lastmod: "2019-12-04T17:07:06-08:00"
+lastmod: "2026-11-22T10:00:00-08:00"
+runnerCode: |
+  import turtle as t
+
+  # 画一个七角星：转角 = 180 - 180 / 角数
+  n = 7
+  for i in range(n):
+      t.fd(120)
+      t.rt(180 - 180 / n)
 slug: "draw-multi-angle-star"
 url: "/draw-multi-angle-star/"
 author: "judi0713@sina.com"

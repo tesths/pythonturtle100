@@ -1,7 +1,18 @@
 ---
 title: "Python 海龟绘图详解——圆和圆弧绘制总结"
 date: "2019-12-04T18:13:59-08:00"
-lastmod: "2020-01-04T17:33:12-08:00"
+lastmod: "2026-11-22T10:00:00-08:00"
+runnerCode: |
+  import turtle as t
+
+  # 画正圆
+  t.circle(100)
+
+  # 抬笔挪到右边，再画一个半圆（圆弧）
+  t.pu()
+  t.goto(160, 0)
+  t.pd()
+  t.circle(60, 180)
 slug: "draw-circle"
 url: "/draw-circle/"
 author: "judi0713@sina.com"

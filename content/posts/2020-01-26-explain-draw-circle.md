@@ -1,7 +1,15 @@
 ---
 title: "Python 海龟绘图详解——Cirlcle 方法画圆"
 date: "2020-01-26T18:50:45-08:00"
-lastmod: "2020-04-23T17:49:59-08:00"
+lastmod: "2026-11-22T10:00:00-08:00"
+runnerCode: |
+  import turtle as t
+
+  # circle(radius, extent)：extent 控制画多少度（正数逆时针，负数顺时针）
+  t.circle(100, 90)   # 四分之一圆
+  t.circle(100, -90)  # 反向四分之一圆
+  t.circle(-100, 90)  # 负半径 = 圆心在右侧
+  t.circle(-100, -90)
 slug: "explain-draw-circle"
 url: "/explain-draw-circle/"
 author: "judi0713@sina.com"

@@ -72,10 +72,22 @@ const post = computed(() => postSummary.value && postDetails.value
   ? { ...postSummary.value, ...postDetails.value }
   : undefined)
 
-// B1: 题目页「在线运行」——大题号页（/turtle100-N/）展示可运行的参考代码。
+// B1: 「在线运行」——题目页（/turtle100-N/）从正文最后一个代码块取可运行参考答案；
+// 高意图「专题落地页」则用 frontmatter 里手写的 runnerCode（完整可运行片段）。
 const problemMatch = computed(() => contentPath.value.match(/^\/turtle100-(\d+)\/$/))
 const isProblemPage = computed(() => Boolean(problemMatch.value))
 const problemNumber = computed(() => (problemMatch.value ? Number(problemMatch.value[1]) : 0))
+
+// 需要展示「在线运行」的专题页（URL 路径）。这些是搜索意图最强的绘图/下载落地页。
+const TOPIC_RUNNER_PATHS = new Set([
+  '/draw-polygon/',
+  '/draw-circle/',
+  '/draw-multi-angle-star/',
+  '/explain-draw-circle/'
+])
+const isTopicRunnerPage = computed(() => TOPIC_RUNNER_PATHS.has(contentPath.value))
+// 是否展示运行器：题目页 或 配了 runnerCode 的白名单专题页。
+const showRunner = computed(() => isProblemPage.value || isTopicRunnerPage.value)
 
 function decodeHtmlEntities(text: string): string {
   return String(text || '')
@@ -88,9 +100,13 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&amp;/g, '&')
 }
 
-// 从渲染后的正文中取「最后一个 python 代码块」作为可运行的参考答案。
+// 可运行代码：题目页取正文「最后一个 python 代码块」；专题页取 frontmatter 的 runnerCode。
 const runnableCode = computed(() => {
-  if (!isProblemPage.value || !post.value) return ''
+  if (!post.value) return ''
+  if (isTopicRunnerPage.value) {
+    return String(post.value.runnerCode || '').trim()
+  }
+  if (!isProblemPage.value) return ''
   const html = String(post.value.content || '')
   const blocks = [...html.matchAll(/<pre[^>]*>\s*<code[^>]*>([\s\S]*?)<\/code>\s*<\/pre>/g)]
   if (!blocks.length) return ''
@@ -99,6 +115,9 @@ const runnableCode = computed(() => {
   if (!raw) return ''
   return decodeHtmlEntities(raw).replace(/<\/?[^>]+>/g, '').trimEnd()
 })
+
+// 运行器标题：题目页「第 N 题」，专题页用文章标题。
+const runnerTitle = computed(() => (isProblemPage.value ? `第 ${problemNumber.value} 题` : (post.value?.title || '')))
 
 // 运行器引言里可读的知识点关键词：取题目标签里的具体项（去掉泛化标签）。
 const runnerKeywords = computed(() => {
@@ -408,9 +427,9 @@ const surroundingPosts = computed<SurroundingPost[]>(() => {
         <PostContent :html="post.content" />
 
         <TurtleRunner
-          v-if="isProblemPage && runnableCode"
+          v-if="showRunner && runnableCode"
           :code="runnableCode"
-          :title="`第 ${problemNumber} 题`"
+          :title="runnerTitle"
           :keywords="runnerKeywords"
         />
 
