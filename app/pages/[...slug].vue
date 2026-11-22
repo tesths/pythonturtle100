@@ -94,7 +94,9 @@ const runnableCode = computed(() => {
   const html = String(post.value.content || '')
   const blocks = [...html.matchAll(/<pre[^>]*>\s*<code[^>]*>([\s\S]*?)<\/code>\s*<\/pre>/g)]
   if (!blocks.length) return ''
-  const raw = blocks[blocks.length - 1][1]
+  const lastBlock = blocks[blocks.length - 1]
+  const raw = lastBlock ? lastBlock[1] : undefined
+  if (!raw) return ''
   return decodeHtmlEntities(raw).replace(/<\/?[^>]+>/g, '').trimEnd()
 })
 
