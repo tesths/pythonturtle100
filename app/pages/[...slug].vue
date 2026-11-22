@@ -125,6 +125,60 @@ const runnerKeywords = computed(() => {
   return (post.value?.tags || []).filter((t: string) => !generic.has(t))
 })
 
+// 把一段可运行代码拆成「可读的步骤」，用于 HowTo 结构化数据。
+// 跳过 import、纯注释、空行；保留 for/while/def/if 等结构行与其缩进体。
+function codeToSteps(code: string): string[] {
+  const lines = String(code || '').split('\n')
+  const steps: string[] = []
+  for (const raw of lines) {
+    const line = raw.replace(/\t/g, '    ')
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    if (trimmed.startsWith('#')) continue
+    if (/^import\s|^from\s+\S+\s+import\s/.test(trimmed)) continue
+    // 去掉行尾注释
+    const noComment = trimmed.replace(/\s+#.*$/, '').trimEnd()
+    if (!noComment) continue
+    steps.push(noComment)
+    if (steps.length >= 12) break
+  }
+  return steps
+}
+
+// HowTo 结构化数据：仅对有「在线运行」的题目页/专题页生成（它们本就是「怎么画 XX」的教程）。
+const howToSchema = computed(() => {
+  if (!post.value || !showRunner.value || !runnableCode.value) return null
+  const steps = codeToSteps(runnableCode.value)
+  if (steps.length < 2) return null
+  const rawTitle = String(post.value.title || '')
+  // 题目页标题形如「Python海龟绘图｜画五角星（第25题）完整代码+讲解」，抽出图形与题号生成自然标题。
+  const pm = rawTitle.match(/｜(.+?)（第(\d+)题）/)
+  const pmShape = pm?.[1] ?? ''
+  const pmNum = pm?.[2] ?? ''
+  const name = isProblemPage.value
+    ? (pm
+        ? `如何用 Python 海龟绘图${pmShape.replace(/^画/, '画出')}（第 ${pmNum} 题）`
+        : `如何用 Python 海龟绘图完成第 ${problemNumber.value} 题`)
+    : `如何用 Python 海龟绘图${rawTitle.replace(/^Python\s*海龟绘图[^-—]*[—-]+/, '').replace(/总结$/, '')}`
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'HowTo',
+    name,
+    description: post.value.summary || site.description,
+    inLanguage: 'zh-CN',
+    totalTime: 'PT1M',
+    tool: [{ '@type': 'HowToTool', name: 'Python（含 turtle 标准库）' }],
+    supply: [{ '@type': 'HowToSupply', name: '电脑与可运行 Python 的环境' }],
+    estimatedCost: { '@type': 'MonetaryAmount', currency: 'CNY', value: '0' },
+    step: steps.map((text, index) => ({
+      '@type': 'HowToStep',
+      position: index + 1,
+      name: `第 ${index + 1} 步`,
+      text
+    }))
+  }
+})
+
 const isPostsIndex = computed(() => contentPath.value === '/posts/')
 const isCategoryIndex = computed(() => contentPath.value === '/category/')
 const isTagIndex = computed(() => contentPath.value === '/tag/')
@@ -333,7 +387,8 @@ useHead({
                 name: site.title,
                 url: siteUrl
               }
-            }
+            },
+        ...(howToSchema.value ? [howToSchema.value] : [])
       ])
     }
   ]
