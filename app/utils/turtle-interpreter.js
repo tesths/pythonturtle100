@@ -20,6 +20,8 @@
  * (recording ops) or drive a real <canvas> in the browser.
  */
 
+import { circleSteps as cpythonCircleSteps } from './turtle-timing.js'
+
 // ---------------------------------------------------------------------------
 // Tokenizer
 // ---------------------------------------------------------------------------
@@ -114,7 +116,7 @@ function tokenizeLine(src, lineNo) {
       // multi-char operators
       const three = src.slice(i, i + 3)
       const two = src.slice(i, i + 2)
-      if (['**='].includes(three)) { tokens.push({ type: 'op', value: three, line: lineNo }); i += 3; continue }
+      if (['**=', '//='].includes(three)) { tokens.push({ type: 'op', value: three, line: lineNo }); i += 3; continue }
       if (['//=', '**', '//', '==', '!=', '<=', '>=', '+=', '-=', '*=', '/=', '%=', '->'].includes(two)) {
         tokens.push({ type: 'op', value: two, line: lineNo }); i += 2; continue
       }
@@ -325,6 +327,22 @@ class Parser {
 
   // Compounds: header sits at this.li; body starts at this.li + 1.
   parseCompoundBody(headerIndent) {
+    // Same-line body: `if x: stmt` / `for ...: stmt` / `def f(): return 1`
+    // If tokens remain on the header line after the colon, parse them as an
+    // inline block of simple statements (separated by `;`). Python allows this.
+    if (!this.atEnd()) {
+      const body = []
+      while (!this.atEnd()) {
+        const stmt = this.parseStatement(headerIndent)
+        if (stmt) body.push(stmt)
+        if (this.isOp(';')) { this.next(); continue }
+        break
+      }
+      // The compound statement is __compound, so the caller won't advance `li`;
+      // we consumed this whole line, so step to the next one ourselves.
+      this.li += 1
+      return body
+    }
     this.li += 1
     return this.parseBlock(headerIndent)
   }
@@ -599,7 +617,17 @@ function makeRange(...args) {
 // for real turtle-style math helpers that don't affect drawing.
 function createTurtleModule(api) {
   const mod = {}
-  const passthrough = ['title', 'setup', 'Screen', 'register_shape', 'addshape', 'mode', 'colormode', 'setworldcoordinates', 'tracer', 'update', 'delay', 'listen', 'mainloop', 'exitonclick', 'bye', 'clear', 'reset', 'color', 'shape', 'shapesize', 'resizemode', 'shearfactor', 'tilt', 'tiltangle', 'stamp', 'clearstamp', 'clearstamps', 'clone', 'begin_poly', 'end_poly', 'get_poly', 'getscreen', 'getturtle', 'getpen', 'setundobuffer', 'getcanvas', 'ontimer']
+  const passthrough = [
+    'title', 'setup', 'Screen', 'register_shape', 'addshape', 'mode', 'colormode',
+    'setworldcoordinates', 'tracer', 'update', 'delay', 'listen', 'mainloop',
+    'exitonclick', 'bye', 'clear', 'reset', 'color', 'shape', 'shapesize',
+    'resizemode', 'shearfactor', 'tilt', 'tiltangle', 'stamp', 'clearstamp',
+    'clearstamps', 'clone', 'begin_poly', 'end_poly', 'get_poly', 'poly',
+    'getscreen', 'getturtle', 'getpen', 'get_shapepoly', 'shapetransform',
+    'setundobuffer', 'undobufferentries', 'getcanvas', 'ontimer', 'onclick',
+    'ondrag', 'onrelease', 'onkey', 'onkeypress', 'onkeyrelease',
+    'onscreenclick', 'window_width', 'window_height',
+  ]
   for (const name of passthrough) mod[name] = (...a) => { if (api[name]) return api[name](...a); return 0 }
   return mod
 }
@@ -632,8 +660,8 @@ function createTurtleNamespace(api) {
     }
   }
 
-  // color(*args) sets both pen and fill
-  ns.color = (...args) => api.pencolor(...args)
+  // color(*args) sets both pen and fill (0/1/2-arg semantics, see api.color)
+  ns.color = (...args) => api.color(...args)
 
   // with t.fill(): ... — returns a context manager-ish object
   // (parsed as expression statements; suport both `fill()` context and manual)
@@ -676,23 +704,26 @@ export function createInterpreter(options = {}) {
 
   function toRadians(deg) { return (deg * Math.PI) / 180 }
 
-  function moveTo(nx, ny, draw) {
+  // `animSpeed` mirrors CPython's per-primitive `self._speed`: the animation
+  // layer must know the speed in effect when this move/turn happened (e.g.
+  // turtle.circle() performs its internal rotations at speed 0 = instant).
+  function moveTo(nx, ny, draw, animSpeed) {
+    const sp = animSpeed === undefined ? state.speed : animSpeed
     if (draw && state.penDown && surface) {
-      surface.drawLine(state.x, state.y, nx, ny, state.penColor, state.penWidth)
+      surface.drawLine(state.x, state.y, nx, ny, state.penColor, state.penWidth, sp)
     }
     state.x = nx
     state.y = ny
     if (state.filling) state.fillPath.push([nx, ny])
-    // Notify the host of the turtle's new pose so it can animate the cursor,
-    // even for pen-up moves (which produce no ink but still move the turtle).
     if (surface && typeof surface.moveCursor === 'function') {
-      surface.moveCursor(state.x, state.y, state.heading, state.penDown)
+      surface.moveCursor(state.x, state.y, state.heading, state.penDown, sp)
     }
   }
-  function turnTo(newHeading) {
+  function turnTo(newHeading, animSpeed) {
+    const sp = animSpeed === undefined ? state.speed : animSpeed
     state.heading = newHeading
     if (surface && typeof surface.moveCursor === 'function') {
-      surface.moveCursor(state.x, state.y, state.heading, state.penDown)
+      surface.moveCursor(state.x, state.y, state.heading, state.penDown, sp)
     }
   }
 
@@ -712,14 +743,21 @@ export function createInterpreter(options = {}) {
     left(a = 0) { api.lt(a) },
 
     circle(radius = 0, extent = null, stepsArg = null) {
+      // fold a trailing kwargs object (radius=/extent=/steps=)
+      for (const v of [radius, extent, stepsArg]) {
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+          if ('radius' in v) radius = v.radius
+          if ('extent' in v) extent = v.extent
+          if ('steps' in v) stepsArg = v.steps
+        }
+      }
       const r = Number(radius)
       if (!r) return // radius 0: nothing to draw
       const ext = extent === null || extent === undefined ? 360 : Number(extent)
       // Match CPython turtle.circle(): steps = 1 + int(min(11 + |r|/6, 59) * frac)
-      const frac = Math.abs(ext) / 360
       const stepsN = stepsArg
         ? Math.max(1, Math.floor(stepsArg))
-        : 1 + Math.floor(Math.min(11 + Math.abs(r) / 6, 59) * frac)
+        : cpythonCircleSteps(r, ext)
       // CPython turtle semantics:
       //  - For positive radius the circle's centre is 90 deg to the LEFT of the
       //    current heading; negative radius puts it to the right.
@@ -734,25 +772,37 @@ export function createInterpreter(options = {}) {
       // Move to the exact start point on the circle first (no-op if already on it).
       state.x = cx + Math.abs(r) * Math.cos(startAngle)
       state.y = cy + Math.abs(r) * Math.sin(startAngle)
+      // CPython turtle.circle() runs every internal _rotate() at speed 0
+      // (instant) and only the _go() chord moves animate at the turtle's speed.
+      // Mirror that: arc points animate at state.speed; the final heading
+      // change is a speed-0 (instant) rotation.
+      const arcSpeed = state.speed
       if (state.filling) state.fillPath = state.fillPath || []
       for (let i = 1; i <= stepsN; i += 1) {
         const a = startAngle + (sweep * i) / stepsN
-        moveTo(cx + Math.abs(r) * Math.cos(a), cy + Math.abs(r) * Math.sin(a), true)
+        moveTo(cx + Math.abs(r) * Math.cos(a), cy + Math.abs(r) * Math.sin(a), true, arcSpeed)
       }
       state.heading += (r > 0 ? 1 : -1) * ext
       if (surface && typeof surface.moveCursor === 'function') {
-        surface.moveCursor(state.x, state.y, state.heading, state.penDown)
+        surface.moveCursor(state.x, state.y, state.heading, state.penDown, 0) // speed 0 => instant
       }
       throttleUpdate()
     },
 
-    goto(x, y) { moveTo(Number(x), Number(y), true); throttleUpdate() },
+    // Accept either goto(x, y) or goto((x, y)) / goto([x, y]) like CPython.
+    goto(x, y) {
+      let tx2 = x, ty2 = y
+      if (Array.isArray(x)) { tx2 = x[0]; ty2 = x[1] }
+      moveTo(Number(tx2), Number(ty2), true); throttleUpdate()
+    },
     setpos(x, y) { api.goto(x, y) },
     setposition(x, y) { api.goto(x, y) },
     teleport(x, y) {
-      if (state.penDown && surface) surface.drawLine(state.x, state.y, Number(x), Number(y), state.penColor, state.penWidth)
-      state.x = Number(x); state.y = Number(y)
-      if (surface && typeof surface.moveCursor === 'function') surface.moveCursor(state.x, state.y, state.heading, state.penDown)
+      let tx2 = x, ty2 = y
+      if (Array.isArray(x)) { tx2 = x[0]; ty2 = x[1] }
+      if (state.penDown && surface) surface.drawLine(state.x, state.y, Number(tx2), Number(ty2), state.penColor, state.penWidth, state.speed)
+      state.x = Number(tx2); state.y = Number(ty2)
+      if (surface && typeof surface.moveCursor === 'function') surface.moveCursor(state.x, state.y, state.heading, state.penDown, 0)
     },
     setx(x) { api.goto(Number(x), state.y) },
     sety(y) { api.goto(state.x, Number(y)) },
@@ -761,26 +811,47 @@ export function createInterpreter(options = {}) {
     heading() { return normalizeHeading(state.heading) },
     home() { api.goto(0, 0); turnTo(0); throttleUpdate() },
     towards(x, y) {
-      return (Math.atan2(Number(y) - state.y, Number(x) - state.x) * 180) / Math.PI
+      // CPython returns the angle in [0, 360): result = round(deg(atan2),10) % 360.
+      // Also accept a single (x, y) pair argument, like CPython.
+      let tx2 = x, ty2 = y
+      if (Array.isArray(x)) { tx2 = Number(x[0]); ty2 = Number(x[1]) }
+      const deg = (Math.atan2(ty2 - state.y, tx2 - state.x) * 180) / Math.PI
+      return ((deg % 360) + 360) % 360
     },
     pos() { return [state.x, state.y] },
     position() { return [state.x, state.y] },
     xcor() { return state.x },
     ycor() { return state.y },
-    distance(x, y) { return Math.hypot(Number(x) - state.x, Number(y) - state.y) },
+    distance(x, y) {
+      let tx2 = x, ty2 = y
+      if (Array.isArray(x)) { tx2 = x[0]; ty2 = x[1] }
+      return Math.hypot(Number(tx2) - state.x, Number(ty2) - state.y)
+    },
     pu() { state.penDown = false }, penup() { state.penDown = false }, up() { state.penDown = false },
     pd() { state.penDown = true }, pendown() { state.penDown = true }, down() { state.penDown = true },
     isdown() { return state.penDown },
+    // CPython: pensize(width=None) returns/sets _pensize verbatim (no clamp).
+    // Store the value as given; the renderer clamps only for drawability.
     pensize(w) {
       if (w === undefined || w === null) return state.penWidth
-      state.penWidth = Math.max(0.5, Number(w)); return state.penWidth
+      state.penWidth = Number(w); return state.penWidth
     },
     width(w) { return api.pensize(w) },
     pencolor(...args) { state.penColor = normalizeColor(args, state.penColor); return state.penColor },
     fillcolor(...args) { state.fillColor = normalizeColor(args, state.fillColor); return state.fillColor },
+    // CPython color(): 0 args -> (pencolor, fillcolor); 1 arg -> both;
+    // 2 args -> pencolor, fillcolor.
     color(...args) {
-      const c = normalizeColor(args, state.penColor)
-      state.penColor = c; state.fillColor = c; return c
+      const a = args.filter((v) => v !== undefined)
+      if (a.length === 0) return [state.penColor, state.fillColor]
+      if (a.length === 1) {
+        const c = normalizeColor(a, state.penColor)
+        state.penColor = c; state.fillColor = c
+        return c
+      }
+      state.penColor = normalizeColor([a[0]], state.penColor)
+      state.fillColor = normalizeColor([a[1]], state.fillColor)
+      return [state.penColor, state.fillColor]
     },
     begin_fill() {
       state.filling = true
@@ -793,13 +864,53 @@ export function createInterpreter(options = {}) {
       state.fillPath = []
     },
     filling() { return state.filling },
-    dot(size = 3, color = null) {
-      if (surface) surface.drawDot(state.x, state.y, Math.max(1, Number(size)) / 2, color ? normalizeColor([color], state.penColor) : state.penColor)
+    // CPython: dot(size=None, *color). Default diameter = pensize + max(pensize,4).
+    // Size is a DIAMETER (radius = size/2). A first string/tuple arg is a color.
+    dot(size = null, color = null, kwOpts = null) {
+      let sz = size
+      let col = color
+      // fold a trailing kwargs object (dot(size=..., color=...))
+      for (const v of [size, color, kwOpts]) {
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+          if ('size' in v) sz = v.size
+          if ('color' in v) col = v.color
+          else if ('pencolor' in v) col = v.pencolor
+        }
+      }
+      // dot("red") / dot((255,0,0)) : first arg is a color, not a size
+      if (typeof sz === 'string' || Array.isArray(sz)) { col = sz; sz = null }
+      const diameter = (sz === null || sz === undefined)
+        ? state.penWidth + Math.max(state.penWidth, 4)
+        : Math.max(0, Number(sz))
+      const c = col === null || col === undefined ? state.penColor : normalizeColor([col], state.penColor)
+      if (surface) surface.drawDot(state.x, state.y, diameter / 2, c)
     },
-    write(text, opts) {
-      const move = opts && typeof opts === 'object' ? opts.move : false
-      if (surface) surface.drawText(state.x, state.y, String(text), state.penColor)
-      if (move) { /* not commonly used */ }
+    // CPython: write(arg, move=False, align="left", font=("Arial",8,"normal")).
+    // Keyword args arrive as a trailing options object (see evalCall), possibly
+    // after positional args, so fold any plain-object argument in.
+    write(text, move = false, align = 'left', font = null, kwOpts = null) {
+      let opts = null
+      for (const v of [move, align, font, kwOpts]) {
+        if (v && typeof v === 'object' && !Array.isArray(v)) { opts = v; break }
+      }
+      if (opts) {
+        if ('move' in opts) move = opts.move
+        if ('align' in opts) align = opts.align
+        if ('font' in opts) font = opts.font
+        if (typeof move === 'object') move = false
+      }
+      const str = String(text)
+      if (surface) surface.drawText(state.x, state.y, str, state.penColor, { align: String(align || 'left'), font })
+      if (move) {
+        // advance pen to the bottom-right corner of the text (approx width)
+        const size = font && Array.isArray(font) ? Number(font[1]) || 13 : 13
+        const approxWidth = str.length * size * 0.55
+        let dx = approxWidth
+        if (String(align).toLowerCase() === 'center') dx = approxWidth / 2
+        else if (String(align).toLowerCase() === 'right') dx = 0
+        moveTo(state.x + dx, state.y, false)
+        throttleUpdate()
+      }
     },
     ht() { state.visible = false }, hideturtle() { state.visible = false },
     st() { state.visible = true }, showturtle() { state.visible = true },
@@ -820,13 +931,41 @@ export function createInterpreter(options = {}) {
     undo() {},
     done() {}, mainloop() {},
     clear() { if (surface) surface.clear() },
+    // CPython reset(): clears the screen AND resets the turtle to its initial
+    // state (home, heading 0, pen down, default colours/size, visible).
     reset() {
       if (surface) surface.clear()
       state.x = 0; state.y = 0; state.heading = 0; state.penDown = true
+      state.penColor = '#1f2937'; state.fillColor = '#1f2937'; state.penWidth = 1
+      state.visible = true; state.filling = false; state.fillPath = []
     },
-    pen(...args) {
-      if (args.length) { state.penDown = Boolean(args[0]) }
-      return { down: () => api.pd(), up: () => api.pu(), color: state.penColor, width: state.penWidth }
+    // CPython pen(pen=None, **pendict): returns/sets a dict of pen attributes.
+    // Keys: shown, pendown, pencolor, fillcolor, pensize, speed (plus extras we
+    // ignore). Accepting/setting is positional-dict or keyword-dict, like native.
+    pen(pen = null, kwOpts = null) {
+      const apply = (d) => {
+        if (!d || typeof d !== 'object') return
+        if ('shown' in d || 'visible' in d) state.visible = Boolean(d.shown !== undefined ? d.shown : d.visible)
+        if ('pendown' in d || 'down' in d) state.penDown = Boolean(d.pendown !== undefined ? d.pendown : d.down)
+        if ('pencolor' in d) state.penColor = normalizeColor([d.pencolor], state.penColor)
+        if ('fillcolor' in d) state.fillColor = normalizeColor([d.fillcolor], state.fillColor)
+        if ('pensize' in d || 'width' in d) { const w = d.pensize !== undefined ? d.pensize : d.width; if (w !== undefined && w !== null) state.penWidth = Math.max(0.5, Number(w)) }
+        if ('speed' in d) { try { api.speed(d.speed) } catch (_) { /* ignore */ } }
+      }
+      // a bare boolean is a common convenience: pen(True/False) -> pendown
+      if (typeof pen === 'boolean') state.penDown = pen
+      else if (pen && typeof pen === 'object') apply(pen)
+      apply(kwOpts)
+      return {
+        shown: state.visible,
+        pendown: state.penDown,
+        pencolor: state.penColor,
+        fillcolor: state.fillColor,
+        pensize: state.penWidth,
+        speed: state.speed,
+        // convenience callbacks (kept for older callers of this port)
+        down: () => api.pd(), up: () => api.pu(), color: state.penColor, width: state.penWidth,
+      }
     },
     __state: state,
     __finish() {
@@ -1089,12 +1228,22 @@ export function runTurtle(source, options = {}) {
     }
   }
 
+  // Turtle methods that accept Python keyword arguments. We pass the collected
+  // kwargs as a trailing options object; these methods read it by Python-name.
+  // Matching happens on the (never-minified) attribute string, so it is safe in
+  // production builds.
+  const KWARGS_METHODS = new Set([
+    'write', 'dot', 'color', 'pencolor', 'fillcolor', 'pen',
+    'circle', 'shapesize', 'shape', 'resizemode', 'shearfactor', 'tilt', 'tiltangle',
+  ])
+
   function evalCall(node, env) {
     let fn
     let thisObj = null
+    let prop = null
     if (node.callee.type === 'attribute') {
       thisObj = evalExpr(node.callee.object, env)
-      const prop = node.callee.property
+      prop = node.callee.property
       fn = thisObj[prop]
       if (typeof fn !== 'function') {
         if (typeof thisObj[prop] !== 'undefined') return thisObj[prop]
@@ -1115,9 +1264,11 @@ export function runTurtle(source, options = {}) {
 
     if (typeof fn !== 'function') throw new Error('调用了一个不是函数的值')
 
-    // keyword arguments: pass as trailing object for methods that accept them (write/fill)
-    if (Object.keys(kwargs).length && (fn.length <= args.length)) {
-      args.push(kwargs)
+    // keyword arguments: for known kwargs-capable turtle methods, pass the
+    // collected kwargs as a trailing options object (read by Python-name).
+    if (Object.keys(kwargs).length) {
+      if (prop && KWARGS_METHODS.has(prop)) args.push(kwargs)
+      else if (fn.length > args.length) args.push(kwargs) // legacy fallback
     }
     try {
       return thisObj ? fn.apply(thisObj, args) : fn(...args)

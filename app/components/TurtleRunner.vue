@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { runTurtle } from '~/utils/turtle-interpreter.js'
+import { moveHops, rotateSteps, normalizeSpeed } from '~/utils/turtle-timing.js'
 
 const props = defineProps<{
   code: string
@@ -53,7 +54,7 @@ type Seg = { x1: number, y1: number, x2: number, y2: number, color: string, widt
 type Op =
   | { kind: 'line', x1: number, y1: number, x2: number, y2: number, color: string, width: number, animSpeed?: number }
   | { kind: 'dot', x: number, y: number, r: number, color: string }
-  | { kind: 'text', x: number, y: number, text: string, color: string }
+  | { kind: 'text', x: number, y: number, text: string, color: string, opts?: { align?: string, size?: number } }
   | { kind: 'fill', color: string, path: number[][] }
   | { kind: 'move', x: number, y: number, heading: number, penDown: boolean, animSpeed?: number }
 
@@ -88,8 +89,12 @@ const surface = {
   drawDot(x: number, y: number, r: number, color: string) {
     opLog.push({ kind: 'dot', x, y, r, color })
   },
-  drawText(x: number, y: number, text: string, color: string) {
-    opLog.push({ kind: 'text', x, y, text, color })
+  drawText(x: number, y: number, text: string, color: string, opts?: any) {
+    const o = opts && typeof opts === 'object' ? opts : {}
+    const font = Array.isArray(o.font) ? o.font : null
+    const size = font ? Number(font[1]) || 13 : 13
+    const align = (o.align && String(o.align).toLowerCase()) || 'left'
+    opLog.push({ kind: 'text', x, y, text, color, opts: { align, size } })
   },
   beginPath() {
     currentFillPath = [[cursor.x, cursor.y]]
@@ -206,10 +211,14 @@ function drawOp(ctx: CanvasRenderingContext2D, op: Op) {
     ctx.arc(tx(op.x), ty(op.y), Math.max(1.4, op.r * worldTransform.scale), 0, Math.PI * 2)
     ctx.fill()
   } else if (op.kind === 'text') {
+    const size = op.opts && op.opts.size ? op.opts.size : 13
+    const align = op.opts && op.opts.align ? op.opts.align : 'left'
     ctx.fillStyle = op.color
-    ctx.font = '13px system-ui, sans-serif'
-    ctx.textBaseline = 'bottom'
+    ctx.font = `${size}px system-ui, sans-serif`
+    ctx.textBaseline = 'alphabetic'
+    ctx.textAlign = align === 'center' ? 'center' : (align === 'right' ? 'right' : 'left')
     ctx.fillText(op.text, tx(op.x), ty(op.y))
+    ctx.textAlign = 'left' // reset for other drawing
   }
   // 'move' ops produce no ink; cursor is drawn on top each frame.
 }
@@ -246,15 +255,15 @@ function renderStatic() {
   if (cursor.visible) drawTurtleCursor(ctx, tx(pose.x), ty(pose.y), pose.heading)
 }
 
-// --- Animation model: matches CPython turtle.py's hop-based animation. ---
-// CPython splits each primitive into `nhops` frames and waits the SAME delay
-// between frames, so every command animates at a constant rate:
-//   - move of screen distance d:  nhops_move = 1 + int(d / (3 * 1.1^s * s))
-//   - rotate of angle a (deg):    nhops_rot  = 1 + int(|a| / (3 * s))
-// We build a flat timeline of frames (one per hop). Each frame advances either a
-// small distance along the current segment or a small angle of the current turn
-// (or nothing, for dot/text/fill which are instantaneous). One frame == one unit
-// of time, giving uniform speed for all commands.
+// --- Animation model: a faithful transcription of CPython turtle.py. ---
+// CPython splits each primitive into `nhops` steps and waits the SAME fixed
+// delay (screen._delayvalue, default 10 ms) between steps, so speed changes the
+// step COUNT, never the delay:
+//   - move of distance d (world units, xscale=yscale=1):
+//         nhops_move = 1 + int(d / (3 * 1.1^s * s))
+//   - rotate of angle a (deg):   nhops_rot = 1 + int(|a| / (3 * s));  s==0 => instant
+// Each frame is one hop. Per-op speed comes from the interpreter, so circle()'s
+// internal rotations (speed 0) are instant, exactly like CPython.
 type Frame =
   | { kind: 'stroke', op: Seg, fromX: number, fromY: number, toFrac: number, heading: number } // drawn segment, partial ink
   | { kind: 'rot', x: number, y: number, heading: number }      // pure rotation pose
@@ -277,20 +286,18 @@ let frames: Frame[] = []
 // speed 0 => instant, exactly like CPython's speed(0) around _rotate()).
 function buildFrames(defaultSpeed: number) {
   frames = []
-  const clampSpeed = (v: number | undefined) => {
-    const n = v === undefined || v === null ? defaultSpeed : v
-    if (!(0.5 < n && n < 10.5)) return 0 // CPython: <0.5 or >10.5 => 0 (jump)
-    return Math.round(n)
-  }
-  const XSCALE = 1, YSCALE = 1 // standard mode
+  // Per-op speed: undefined => program default; else the op's captured speed.
+  // normalizeSpeed() mirrors Turtle.speed()'s mapping (<0.5 or >10.5 => 0).
+  const clampSpeed = (v: number | undefined) => normalizeSpeed(v === undefined || v === null ? defaultSpeed : v)
 
   let px = 0, py = 0, heading = 0
 
   const pushRot = (targetHeading: number, sp: number) => {
     const delta = targetHeading - heading
     if (Math.abs(delta) < 1e-9) return
-    if (sp <= 0) { heading = targetHeading; return } // speed 0 => turn instantly
-    const steps = 1 + Math.floor(Math.abs(delta) / (3 * sp))
+    // CPython _rotate: steps = 1 + int(|angle| / (3*speed)); speed 0 => instant.
+    const steps = rotateSteps(delta, sp)
+    if (steps <= 0) { heading = targetHeading; return }
     const inc = delta / steps
     for (let i = 1; i <= steps; i += 1) {
       frames.push({ kind: 'rot', x: px, y: py, heading: heading + inc * i })
@@ -301,12 +308,12 @@ function buildFrames(defaultSpeed: number) {
   // Emit motion frames for a translation from (px,py) to (tx2,ty2).
   //   strokeOp given  -> drawn segment: emit `stroke` frames that lay ink.
   //   strokeOp absent -> pen-up jump: emit `jump` frames that only move the cursor.
+  // Frame count = CPython moveHops() (== number of _update() delays in _goto).
   const pushMove = (tx2: number, ty2: number, sp: number, trackHeading: boolean, strokeOp?: Seg) => {
     const dx = tx2 - px, dy = ty2 - py
-    const distSq = (dx * XSCALE) ** 2 + (dy * YSCALE) ** 2
-    const dist = Math.sqrt(distSq)
+    const dist = Math.hypot(dx, dy) // world units; xscale == yscale == 1 (standard mode)
     if (dist < 1e-9) return
-    const nhops = sp <= 0 ? 1 : 1 + Math.floor(dist / (3 * Math.pow(1.1, sp) * sp))
+    const nhops = moveHops(dist, sp)
     const startX = px, startY = py
     const h = Math.atan2(dy, dx) * 180 / Math.PI
     for (let n = 1; n <= nhops; n += 1) {
@@ -372,9 +379,6 @@ function startAnimation() {
   }
 
   buildFrames(speedSetting)
-  // @ts-ignore debug hook (removed after measurement)
-  // @ts-ignore debug hook (removed after measurement)
-  if (typeof window !== 'undefined') (window as any).__ttFrames = { frames, scale: worldTransform.scale }
 
   // CPython's animation uses a FIXED delay between every hop
   // (screen._delayvalue, default 10 ms). Speed changes the *number of hops*, not
@@ -429,16 +433,12 @@ function startAnimation() {
       status.value = 'ok'
       ranOnce.value = true
       animHandle = 0
-      // @ts-ignore debug
-      if (typeof window !== 'undefined') (window as any).__ttInfo = { hops: frames.length, startMs: (window as any).__ttStartMs || 0, endMs: performance.now() }
       return
     }
     composite(pose.x, pose.y, pose.heading)
     animHandle = requestAnimationFrame(step)
   }
   status.value = 'running'
-  // @ts-ignore debug
-  if (typeof window !== 'undefined') (window as any).__ttStartMs = performance.now()
   animHandle = requestAnimationFrame(step)
 }
 
@@ -514,8 +514,6 @@ function drawGrid(ctx: CanvasRenderingContext2D, w: number, h: number) {
 function run() {
   status.value = 'running'
   errorMessage.value = ''
-  // @ts-ignore debug
-  if (typeof window !== 'undefined') { (window as any).__ttInfo = null; (window as any).__ttFrames = null }
   if (animHandle) { cancelAnimationFrame(animHandle); animHandle = 0 }
   resetBuffers()
   // Execute the whole program first (records the ordered op timeline), then
